@@ -1,12 +1,15 @@
+// Copyright © 2022-2023 Obol Labs Inc. Licensed under the terms of a Business Source License 1.1
+
 package cmd
 
 import (
+	"net/url"
+	"strings"
+
 	"github.com/obolnetwork/charon/app/log"
 	"github.com/obolnetwork/charon/app/z"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
-	"net/url"
-	"strings"
 )
 
 // flagsToLogFields converts the given flags to log fields.
