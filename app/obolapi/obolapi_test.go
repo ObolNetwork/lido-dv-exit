@@ -1,17 +1,21 @@
+// Copyright © 2022-2023 Obol Labs Inc. Licensed under the terms of a Business Source License 1.1
+
 package obolapi_test
 
 import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"fmt"
-	"github.com/ObolNetwork/lido-dv-exit/app/obolapi"
+	"net/http/httptest"
+	"testing"
+
+	"github.com/attestantio/go-eth2-client/spec/phase0"
 	"github.com/obolnetwork/charon/cluster"
 	"github.com/obolnetwork/charon/tbls"
 	"github.com/obolnetwork/charon/tbls/tblsconv"
 	"github.com/stretchr/testify/require"
-	"net/http/httptest"
-	"testing"
+
+	"github.com/ObolNetwork/lido-dv-exit/app/obolapi"
 )
 
 func TestAPIFlow(t *testing.T) {
@@ -32,9 +36,12 @@ func TestAPIFlow(t *testing.T) {
 
 	addLockFiles(lock)
 
-	exitMsg := obolapi.ExitMessage{
-		Epoch:          "42",
-		ValidatorIndex: "42",
+	exitMsg := phase0.SignedVoluntaryExit{
+		Message: &phase0.VoluntaryExit{
+			Epoch:          42,
+			ValidatorIndex: 42,
+		},
+		Signature: phase0.BLSSignature{},
 	}
 
 	exitMsgBytes, err := json.Marshal(exitMsg)
@@ -48,11 +55,13 @@ func TestAPIFlow(t *testing.T) {
 		signature, err := tbls.Sign(shareSet, emHash[:])
 		require.NoError(t, err)
 
+		exitMsg := exitMsg
+		exitMsg.Signature = phase0.BLSSignature(signature)
+
 		exits = append(exits, obolapi.ExitBlob{
-			PublicKey:   lock.Validators[0].PublicKeyHex(),
-			ExitMessage: exitMsg,
-			Signature:   fmt.Sprintf("0x%x", signature[:]),
-			ShareIdx:    idx + 1,
+			PublicKey:         lock.Validators[0].PublicKeyHex(),
+			SignedExitMessage: exitMsg,
+			ShareIdx:          idx + 1,
 		})
 	}
 
@@ -72,10 +81,7 @@ func TestAPIFlow(t *testing.T) {
 	valPubk, err := lock.Validators[0].PublicKey()
 	require.NoError(t, err)
 
-	rawSigBytes, err := hex.DecodeString(fullExit.Signature[2:])
-	require.NoError(t, err)
-
-	sig, err := tblsconv.SignatureFromBytes(rawSigBytes)
+	sig, err := tblsconv.SignatureFromBytes(fullExit.SignedExitMessage.Signature[:])
 	require.NoError(t, err)
 
 	// verify that the aggregated signature works

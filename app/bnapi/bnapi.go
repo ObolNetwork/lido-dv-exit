@@ -1,21 +1,17 @@
+// Copyright © 2022-2023 Obol Labs Inc. Licensed under the terms of a Business Source License 1.1
+
 package bnapi
 
 import (
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"github.com/gorilla/mux"
-	"github.com/obolnetwork/charon/app/errors"
 	"net/http"
-	"net/url"
-	"strings"
 	"testing"
-)
+	"time"
 
-const (
-	validatorStatePathTmpl = "/eth/v1/beacon/states/{state_id}/validators/{validator_id}"
-	stateIDPath            = "{state_id}"
-	valIDPath              = "{validator_id}"
+	ethApi "github.com/attestantio/go-eth2-client/api/v1"
+	"github.com/attestantio/go-eth2-client/spec/phase0"
+	"github.com/gorilla/mux"
 )
 
 // Error is the error struct that Beacon Node returns when HTTP status code is not 200.
@@ -73,94 +69,17 @@ func stringToStateID(s string) StateID {
 	}
 }
 
-func pubkeyValid(pubKey string) error {
-	if len(pubKey) < 98 { // BLS pubkey is 48 bytes, hex-encoded is 96, plus 0x == 98
-		return errors.New("pubkey too short")
-	}
-
-	prefix := pubKey[:2]
-	if prefix != "0x" {
-		return errors.New("pubkey prefix is not 0x")
-	}
-
-	pubKey = pubKey[2:]
-
-	if _, err := hex.DecodeString(pubKey); err != nil {
-		return errors.Wrap(err, "pubkey not hex encoded")
-	}
-
-	return nil
-}
-
-func validatorStatePath(sid StateID, valPubkey string) (string, error) {
-	if sid.String() == "unknown" {
-		return "", errors.New("provided state id is unknown")
-	}
-
-	if err := pubkeyValid(valPubkey); err != nil {
-		return "", errors.Wrap(err, "invalid pubkey")
-	}
-
-	r := strings.NewReplacer(
-		stateIDPath,
-		sid.String(),
-		valIDPath,
-		valPubkey,
-	)
-
-	return r.Replace(validatorStatePathTmpl), nil
-}
-
-type Client struct {
-	BeaconNodeURL string
-}
-
-func (c Client) ValidatorStateForStateID(sid StateID, valPubkey string) (ValidatorState, error) {
-	path, err := validatorStatePath(sid, valPubkey)
-	if err != nil {
-		return ValidatorState{}, err
-	}
-
-	u, err := url.ParseRequestURI(c.BeaconNodeURL)
-	if err != nil {
-		return ValidatorState{}, errors.Wrap(err, "invalid beacon node url")
-	}
-
-	u.Path = path
-
-	resp, err := http.Get(u.String())
-	if err != nil {
-		return ValidatorState{}, errors.Wrap(err, "http get error")
-	}
-
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		var ret Error
-
-		if err := json.NewDecoder(resp.Body).Decode(&ret); err != nil {
-			return ValidatorState{}, errors.Wrap(err, "json decoding error")
-		}
-
-		return ValidatorState{}, ret
-	}
-
-	var ret ValidatorState
-
-	if err := json.NewDecoder(resp.Body).Decode(&ret); err != nil {
-		return ValidatorState{}, errors.Wrap(err, "json decoding error")
-	}
-
-	return ret, nil
-}
-
 // MockValidatorAPIForT returns a http.HandlerFunc that simulates a beacon node API for the
 // validator state endpoint.
-func MockValidatorAPIForT(_ *testing.T, validators map[string]ValidatorState) http.HandlerFunc {
+func MockValidatorAPIForT(_ *testing.T, validators map[string]ethApi.Validator) http.HandlerFunc {
+	type retContainer struct {
+		Data []*ethApi.Validator `json:"data"`
+	}
+
 	return func(writer http.ResponseWriter, request *http.Request) {
 		vars := mux.Vars(request)
 
-		valID := vars["validator_id"]
+		valID := request.URL.Query().Get("id")
 		rawStateID := vars["state_id"]
 
 		stateID := stringToStateID(rawStateID)
@@ -176,7 +95,7 @@ func MockValidatorAPIForT(_ *testing.T, validators map[string]ValidatorState) ht
 			}
 
 			writer.WriteHeader(http.StatusBadRequest)
-			writer.Write(errBytes)
+			_, _ = writer.Write(errBytes)
 			return
 		}
 
@@ -193,11 +112,15 @@ func MockValidatorAPIForT(_ *testing.T, validators map[string]ValidatorState) ht
 			}
 
 			writer.WriteHeader(http.StatusNotFound)
-			writer.Write(errBytes)
+			_, _ = writer.Write(errBytes)
 			return
 		}
 
-		if err := json.NewEncoder(writer).Encode(valStatus); err != nil {
+		if err := json.NewEncoder(writer).Encode(retContainer{
+			Data: []*ethApi.Validator{
+				&valStatus,
+			},
+		}); err != nil {
 			errBytes, err := json.Marshal(Error{
 				Code:    http.StatusInternalServerError,
 				Message: "Internal server error",
@@ -208,8 +131,50 @@ func MockValidatorAPIForT(_ *testing.T, validators map[string]ValidatorState) ht
 			}
 
 			writer.WriteHeader(http.StatusInternalServerError)
-			writer.Write(errBytes)
+			_, _ = writer.Write(errBytes)
 			return
 		}
 	}
+}
+
+func MockBeaconNodeForT(t *testing.T, validators map[string]ethApi.Validator) http.Handler {
+	router := mux.NewRouter()
+
+	router.HandleFunc("/eth/v1/beacon/genesis", func(writer http.ResponseWriter, request *http.Request) {
+		_ = json.NewEncoder(writer).Encode(&ethApi.Genesis{
+			GenesisTime:           time.Now(),
+			GenesisValidatorsRoot: phase0.Root{},
+			GenesisForkVersion:    phase0.Version{},
+		})
+	})
+
+	router.HandleFunc("/eth/v1/config/spec", func(writer http.ResponseWriter, request *http.Request) {
+		_ = json.NewEncoder(writer).Encode(struct {
+			Data map[string]string `json:"data"`
+		}{})
+	})
+
+	router.HandleFunc("/eth/v1/config/deposit_contract", func(writer http.ResponseWriter, request *http.Request) {
+		_ = json.NewEncoder(writer).Encode(struct {
+			Data *ethApi.DepositContract `json:"data"`
+		}{})
+	})
+
+	router.HandleFunc("/eth/v1/config/fork_schedule", func(writer http.ResponseWriter, request *http.Request) {
+		_ = json.NewEncoder(writer).Encode(struct {
+			Data []*phase0.Fork `json:"data"`
+		}{})
+	})
+
+	router.HandleFunc("/eth/v1/node/version", func(writer http.ResponseWriter, request *http.Request) {
+		_ = json.NewEncoder(writer).Encode(struct {
+			Data struct {
+				Version string `json:"version"`
+			} `json:"data"`
+		}{})
+	})
+
+	router.HandleFunc("/eth/v1/beacon/states/{state_id}/validators", MockValidatorAPIForT(t, validators))
+
+	return router
 }

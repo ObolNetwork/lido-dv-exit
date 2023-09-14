@@ -1,24 +1,26 @@
+// Copyright © 2022-2023 Obol Labs Inc. Licensed under the terms of a Business Source License 1.1
+
 package keystore_test
 
 import (
 	"bytes"
 	"fmt"
-	"github.com/golang/protobuf/proto"
-	"github.com/obolnetwork/charon/cluster"
-	"github.com/obolnetwork/charon/cluster/manifest"
 	"math/rand"
 	"os"
 	"path/filepath"
 	"testing"
 
-	"github.com/ObolNetwork/lido-dv-exit/keystore"
+	"github.com/obolnetwork/charon/cluster"
+	"github.com/obolnetwork/charon/cluster/manifest"
 	manifestpb "github.com/obolnetwork/charon/cluster/manifestpb/v1"
+	ckeystore "github.com/obolnetwork/charon/eth2util/keystore"
 	"github.com/obolnetwork/charon/tbls"
 	"github.com/obolnetwork/charon/tbls/tblsconv"
 	"github.com/obolnetwork/charon/testutil"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/proto"
 
-	ckeystore "github.com/obolnetwork/charon/eth2util/keystore"
+	"github.com/ObolNetwork/lido-dv-exit/app/keystore"
 )
 
 func TestKeyshareToValidatorPubkey(t *testing.T) {
@@ -70,14 +72,14 @@ func TestKeyshareToValidatorPubkey(t *testing.T) {
 		sharePrivKeyFound := false
 
 		for _, val := range cl.Validators {
-			if valPubKey == fmt.Sprintf("0x%x", val.PublicKey) {
+			if string(valPubKey) == fmt.Sprintf("0x%x", val.PublicKey) {
 				valFound = true
 				break
 			}
 		}
 
 		for _, share := range privateShares {
-			if bytes.Equal(share[:], sharePrivKey[:]) {
+			if bytes.Equal(share[:], sharePrivKey.Share[:]) {
 				sharePrivKeyFound = true
 				break
 			}
