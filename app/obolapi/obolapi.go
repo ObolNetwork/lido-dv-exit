@@ -1,14 +1,17 @@
+// Copyright © 2022-2023 Obol Labs Inc. Licensed under the terms of a Business Source License 1.1
+
 package obolapi
 
 import (
 	"bytes"
 	"encoding/json"
-	eth2p0 "github.com/attestantio/go-eth2-client/spec/phase0"
-	"github.com/obolnetwork/charon/app/errors"
-	"github.com/obolnetwork/charon/app/z"
 	"net/http"
 	"net/url"
 	"strings"
+
+	eth2p0 "github.com/attestantio/go-eth2-client/spec/phase0"
+	"github.com/obolnetwork/charon/app/errors"
+	"github.com/obolnetwork/charon/app/z"
 )
 
 const (

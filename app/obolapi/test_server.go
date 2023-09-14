@@ -1,18 +1,21 @@
+// Copyright © 2022-2023 Obol Labs Inc. Licensed under the terms of a Business Source License 1.1
+
 package obolapi
 
 import (
 	"encoding/hex"
 	"encoding/json"
+	"net/http"
+	"strings"
+	"sync"
+	"testing"
+
 	eth2p0 "github.com/attestantio/go-eth2-client/spec/phase0"
 	"github.com/gorilla/mux"
 	"github.com/obolnetwork/charon/app/errors"
 	"github.com/obolnetwork/charon/cluster"
 	"github.com/obolnetwork/charon/tbls"
 	"github.com/obolnetwork/charon/tbls/tblsconv"
-	"net/http"
-	"strings"
-	"sync"
-	"testing"
 )
 
 type tsError struct {
@@ -81,7 +84,7 @@ func (ts *testServer) HandlePartialExit(writer http.ResponseWriter, request *htt
 		valFound := false
 
 		for _, lockVal := range lock.Validators {
-			if strings.ToLower(exit.PublicKey) == strings.ToLower(lockVal.PublicKeyHex()) {
+			if strings.EqualFold(exit.PublicKey, lockVal.PublicKeyHex()) {
 				valFound = true
 				break
 			}
@@ -159,7 +162,7 @@ func (ts *testServer) partialExitsMatch(newOne ExitBlob) bool {
 	exitsLen := len(ts.partialExits[newOne.PublicKey])
 	last := ts.partialExits[newOne.PublicKey][exitsLen-1]
 
-	return last.SignedExitMessage.Message == newOne.SignedExitMessage.Message
+	return *last.SignedExitMessage.Message == *newOne.SignedExitMessage.Message
 }
 
 func GenerateTestServer(_ *testing.T) (http.Handler, func(lock cluster.Lock)) {

@@ -1,19 +1,21 @@
+// Copyright © 2022-2023 Obol Labs Inc. Licensed under the terms of a Business Source License 1.1
+
 package keystore
 
 import (
 	"encoding/hex"
 	"fmt"
-	"github.com/attestantio/go-eth2-client/spec/phase0"
-	"github.com/obolnetwork/charon/tbls/tblsconv"
 	"os"
 	"path/filepath"
 
+	"github.com/attestantio/go-eth2-client/spec/phase0"
 	"github.com/obolnetwork/charon/app/errors"
 	"github.com/obolnetwork/charon/cluster"
 	"github.com/obolnetwork/charon/cluster/manifest"
 	manifestpb "github.com/obolnetwork/charon/cluster/manifestpb/v1"
 	ckeystore "github.com/obolnetwork/charon/eth2util/keystore"
 	"github.com/obolnetwork/charon/tbls"
+	"github.com/obolnetwork/charon/tbls/tblsconv"
 )
 
 // KeyShare represents a share in the context of a Charon cluster,

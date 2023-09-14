@@ -1,3 +1,5 @@
+// Copyright © 2022-2023 Obol Labs Inc. Licensed under the terms of a Business Source License 1.1
+
 package app
 
 import (
@@ -5,8 +7,10 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"github.com/ObolNetwork/lido-dv-exit/app/keystore"
-	"github.com/ObolNetwork/lido-dv-exit/app/obolapi"
+	"os"
+	"path/filepath"
+	"time"
+
 	ethApi "github.com/attestantio/go-eth2-client/api/v1"
 	"github.com/attestantio/go-eth2-client/http"
 	eth2p0 "github.com/attestantio/go-eth2-client/spec/phase0"
@@ -17,9 +21,10 @@ import (
 	"github.com/obolnetwork/charon/app/z"
 	"github.com/obolnetwork/charon/eth2util/signing"
 	"github.com/obolnetwork/charon/tbls"
-	"os"
-	"path/filepath"
-	"time"
+
+	"github.com/ObolNetwork/lido-dv-exit/app/bnapi"
+	"github.com/ObolNetwork/lido-dv-exit/app/keystore"
+	"github.com/ObolNetwork/lido-dv-exit/app/obolapi"
 )
 
 // Config is the lido-dv-exit CLI configuration flag value holder.
@@ -34,11 +39,6 @@ type Config struct {
 
 	// TODO: check that the directory exists, keystore.LoadManifest will check the format is appropriate.
 	CharonRuntimeDir string
-}
-
-type signedExit struct {
-	Exit     eth2p0.SignedVoluntaryExit
-	ShareIdx int
 }
 
 // Run runs the lido-dv-exit core logic.
@@ -64,16 +64,10 @@ func Run(ctx context.Context, config Config) error {
 		return errors.Wrap(err, "validator keys to phase0")
 	}
 
-	bnHttpClient, err := http.New(ctx,
-		http.WithAddress(config.BeaconNodeURL),
-	)
-
+	bnClient, err := eth2Client(ctx, config.BeaconNodeURL)
 	if err != nil {
 		return errors.Wrap(err, "can't connect to beacon node")
 	}
-
-	bnClient := bnHttpClient.(*http.Service)
-	eth2WrapBnClient := eth2wrap.AdaptEth2HTTP(bnClient, 1*time.Second)
 
 	// TODO(gsora): check obol api url, see if correct
 	oApi := obolapi.Client{ObolAPIUrl: "https://api.obol.tech"}
@@ -88,9 +82,9 @@ func Run(ctx context.Context, config Config) error {
 		}
 
 		// TODO(gsora): calling with finalized here, need to understand what's better
-		valIndices, err := bnClient.ValidatorsByPubKey(ctx, "finalized", phase0Vals)
+		valIndices, err := bnClient.ValidatorsByPubKey(ctx, bnapi.StateIDFinalized.String(), phase0Vals)
 		if err != nil {
-			log.Error(ctx, "cannot fetch validator state", err)
+			log.Error(ctx, "Cannot fetch validator state", err)
 			continue
 		}
 
@@ -100,20 +94,20 @@ func Run(ctx context.Context, config Config) error {
 			ctx := log.WithCtx(ctx, z.Str("validator", validatorPubkStr))
 
 			if !shouldProcessValidator(val) {
-				log.Debug(ctx, "not processing validator", z.Str("state", val.Status.String()))
+				log.Debug(ctx, "Not processing validator", z.Str("state", val.Status.String()))
 				continue
 			}
 
 			valKeyShare, found := valsKeys[keystore.ValidatorPubkey(validatorPubkStr)]
 			if !found {
-				log.Warn(ctx, "found validator to process which doesn't have available keyshare", nil)
+				log.Warn(ctx, "Found validator to process which doesn't have available keyshare", nil)
 				continue
 			}
 
 			// sign exit
-			exit, err := signExit(ctx, eth2WrapBnClient, valIndex, valKeyShare.Share)
+			exit, err := signExit(ctx, bnClient, valIndex, valKeyShare.Share)
 			if err != nil {
-				log.Error(ctx, "cannot sign exit", err)
+				log.Error(ctx, "Cannot sign exit", err)
 				continue
 			}
 
@@ -131,7 +125,7 @@ func Run(ctx context.Context, config Config) error {
 	for range tick.C {
 		// we're retrying every second until we succeeed
 		if err := oApi.PostPartialExit("0x"+hex.EncodeToString(cl.GetInitialMutationHash()), signedExits...); err != nil {
-			log.Error(ctx, "cannot post exits to obol api", err)
+			log.Error(ctx, "Cannot post exits to obol api", err)
 			continue
 		}
 
@@ -149,19 +143,19 @@ func Run(ctx context.Context, config Config) error {
 			fullExit, err := oApi.GetFullExit(validatorPubkey)
 			if err != nil {
 				if !errors.Is(err, obolapi.ErrNoExit) {
-					log.Warn(ctx, "cannot fetch full exit from obol api, will retry", err)
+					log.Warn(ctx, "Cannot fetch full exit from obol api, will retry", err)
 				}
 				continue
 			}
 
 			data, err := json.Marshal(fullExit)
 			if err != nil {
-				log.Warn(ctx, "cannot marshal exit to json", err)
+				log.Warn(ctx, "Cannot marshal exit to json", err)
 				continue
 			}
 
 			if err := os.WriteFile(exitFSPath, data, 0755); err != nil {
-				log.Warn(ctx, "cannot write exit to filesystem path", err, z.Str("destination_path", exitFSPath))
+				log.Warn(ctx, "Cannot write exit to filesystem path", err, z.Str("destination_path", exitFSPath))
 			}
 		}
 
@@ -222,4 +216,18 @@ func signExit(ctx context.Context, eth2Cl eth2wrap.Client, valIdx eth2p0.Validat
 		Message:   exit,
 		Signature: eth2p0.BLSSignature(sig),
 	}, nil
+}
+
+// eth2Client initializes an eth2 beacon node API client.
+func eth2Client(ctx context.Context, bnURL string) (eth2wrap.Client, error) {
+	bnHttpClient, err := http.New(ctx,
+		http.WithAddress(bnURL),
+	)
+
+	if err != nil {
+		return nil, errors.Wrap(err, "can't connect to beacon node")
+	}
+
+	bnClient := bnHttpClient.(*http.Service)
+	return eth2wrap.AdaptEth2HTTP(bnClient, 1*time.Second), nil
 }

@@ -1,15 +1,19 @@
+// Copyright © 2022-2023 Obol Labs Inc. Licensed under the terms of a Business Source License 1.1
+
 package cmd
 
 import (
 	"context"
-	"github.com/ObolNetwork/lido-dv-exit/app"
+	"net/url"
+	"os"
+	"path/filepath"
+
 	libp2plog "github.com/ipfs/go-log/v2"
 	"github.com/obolnetwork/charon/app/errors"
 	"github.com/obolnetwork/charon/app/log"
 	"github.com/spf13/cobra"
-	"net/url"
-	"os"
-	"path/filepath"
+
+	"github.com/ObolNetwork/lido-dv-exit/app"
 )
 
 // Run runs lido-dv-exit.
