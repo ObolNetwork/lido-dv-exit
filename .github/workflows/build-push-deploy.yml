@@ -1,0 +1,73 @@
+on:
+  push:
+    branches:
+      - main*
+    tags:
+      - 'v*'
+name: Build and Publish Docker Image
+jobs:
+  build-docker:
+    runs-on: ubuntu-latest
+    name: Build Docker Image
+    steps:
+    - uses: actions/checkout@v3
+      with:
+        fetch-depth: 0
+    - uses: docker/setup-buildx-action@v2
+
+    - name: Get version.Version from the code
+      if: github.ref_type == 'branch'
+      run: echo "APP_VERSION=$(grep 'var version' version/version.go | cut -d'"' -f2)" >> $GITHUB_ENV
+
+    - name: Define docker image meta data tags
+      id: meta
+      uses: docker/metadata-action@v4
+      with:
+        images: |
+          obolnetwork/lido-dv-exit
+          ghcr.io/obolnetwork/lido-dv-exit
+        tags: |
+          # Tag "git short sha" on all git events
+          type=sha,prefix=
+
+          # Tag "latest" on git-push-to-main-branch events
+          type=raw,value=latest,event=branch,enable={{is_default_branch}}
+
+          # Tag "$APP_VERSION" on git-push-to-branch events
+          type=raw,value=${{ env.APP_VERSION }},event=branch
+
+          # Tag "tag ref" on git-tag events
+          type=ref,event=tag
+
+    - name: Login to Github container registry
+      uses: docker/login-action@v2
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Login to Dockerhub container registry
+      uses: docker/login-action@v2
+      with:
+        username: obolnetwork
+        password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+    - name: Maybe overwrite app/version.Version with git tag
+      if: github.ref_type == 'tag'
+      run: echo 'GO_BUILD_FLAG=-ldflags=-X github.com/obolnetwork/lido-dv-exit/version.version=${{ github.ref_name }}' >> $GITHUB_ENV
+
+    - uses: docker/build-push-action@v4
+      with:
+        context: .
+        platforms: linux/amd64,linux/arm64
+        push: false # don't push images to docker hub for now
+        build-args: |
+          GITHUB_SHA=${{ github.sha }}
+          GO_BUILD_FLAG=${{ env.GO_BUILD_FLAG }}
+        tags: ${{ steps.meta.outputs.tags }}
+
+    - name: Set short git commit SHA
+      id: vars
+      run: |
+        calculatedSha=$(git rev-parse --short=7 ${{ github.sha }})
+        echo "::set-output name=short_sha::$calculatedSha"
