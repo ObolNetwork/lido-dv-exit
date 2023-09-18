@@ -39,6 +39,8 @@ type Config struct {
 
 	// TODO: check that the directory exists, keystore.LoadManifest will check the format is appropriate.
 	CharonRuntimeDir string
+
+	ObolAPIURL string
 }
 
 // Run runs the lido-dv-exit core logic.

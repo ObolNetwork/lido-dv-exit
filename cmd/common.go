@@ -3,6 +3,7 @@
 package cmd
 
 import (
+	"context"
 	"net/url"
 	"strings"
 
@@ -10,7 +11,24 @@ import (
 	"github.com/obolnetwork/charon/app/z"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
+
+	"github.com/ObolNetwork/lido-dv-exit/app"
 )
+
+// Run runs lido-dv-exit.
+func Run(ctx context.Context) error {
+	var conf app.Config
+
+	root := &cobra.Command{
+		Use:   "lido-exit-dv",
+		Short: "Validator exit tool for Lido",
+	}
+
+	newRunCmd(root, conf, app.Run)
+	newVersionCmd(root)
+
+	return root.ExecuteContext(ctx)
+}
 
 // flagsToLogFields converts the given flags to log fields.
 func flagsToLogFields(flags *pflag.FlagSet) []z.Field {
