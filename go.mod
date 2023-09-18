@@ -5,6 +5,7 @@ go 1.20
 require (
 	github.com/attestantio/go-eth2-client v0.18.3
 	github.com/gorilla/mux v1.8.0
+	github.com/libp2p/go-libp2p v0.31.0
 	github.com/obolnetwork/charon v0.17.0
 	github.com/rs/zerolog v1.29.1
 	github.com/spf13/cobra v1.7.0
@@ -58,7 +59,6 @@ require (
 	github.com/libp2p/go-buffer-pool v0.1.0 // indirect
 	github.com/libp2p/go-cidranger v1.1.0 // indirect
 	github.com/libp2p/go-flow-metrics v0.1.0 // indirect
-	github.com/libp2p/go-libp2p v0.31.0 // indirect
 	github.com/libp2p/go-libp2p-asn-util v0.3.0 // indirect
 	github.com/libp2p/go-msgio v0.3.0 // indirect
 	github.com/libp2p/go-nat v0.2.0 // indirect
