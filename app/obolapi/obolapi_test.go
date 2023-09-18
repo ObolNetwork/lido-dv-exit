@@ -65,7 +65,7 @@ func TestAPIFlow(t *testing.T) {
 		})
 	}
 
-	lockHash := hex.EncodeToString(lock.LockHash)
+	lockHash := "0x" + hex.EncodeToString(lock.LockHash)
 
 	cl := obolapi.Client{ObolAPIUrl: srv.URL}
 
