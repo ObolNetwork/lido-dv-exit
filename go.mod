@@ -5,11 +5,12 @@ go 1.20
 require (
 	github.com/attestantio/go-eth2-client v0.18.3
 	github.com/gorilla/mux v1.8.0
-	github.com/ipfs/go-log/v2 v2.5.1
 	github.com/obolnetwork/charon v0.17.0
+	github.com/rs/zerolog v1.29.1
 	github.com/spf13/cobra v1.7.0
 	github.com/spf13/pflag v1.0.5
 	github.com/stretchr/testify v1.8.4
+	golang.org/x/sync v0.3.0
 	google.golang.org/protobuf v1.31.0
 )
 
@@ -46,6 +47,7 @@ require (
 	github.com/huin/goupnp v1.2.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/ipfs/go-cid v0.4.1 // indirect
+	github.com/ipfs/go-log/v2 v2.5.1 // indirect
 	github.com/jackpal/go-nat-pmp v1.0.2 // indirect
 	github.com/jbenet/go-temp-err-catcher v0.1.0 // indirect
 	github.com/jonboulle/clockwork v0.4.0 // indirect
@@ -100,7 +102,6 @@ require (
 	github.com/quic-go/webtransport-go v0.5.3 // indirect
 	github.com/r3labs/sse/v2 v2.10.0 // indirect
 	github.com/raulk/go-watchdog v1.3.0 // indirect
-	github.com/rs/zerolog v1.29.1 // indirect
 	github.com/spaolacci/murmur3 v1.1.0 // indirect
 	github.com/wealdtech/go-eth2-wallet-encryptor-keystorev4 v1.3.1 // indirect
 	go.opentelemetry.io/otel v1.16.0 // indirect
@@ -117,7 +118,6 @@ require (
 	golang.org/x/exp v0.0.0-20230817173708-d852ddb80c63 // indirect
 	golang.org/x/mod v0.12.0 // indirect
 	golang.org/x/net v0.14.0 // indirect
-	golang.org/x/sync v0.3.0 // indirect
 	golang.org/x/sys v0.11.0 // indirect
 	golang.org/x/term v0.11.0 // indirect
 	golang.org/x/text v0.12.0 // indirect
