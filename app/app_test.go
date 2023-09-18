@@ -4,21 +4,28 @@ package app_test
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math/rand"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	ethApi "github.com/attestantio/go-eth2-client/api/v1"
+	"github.com/attestantio/go-eth2-client/http"
 	"github.com/attestantio/go-eth2-client/spec/phase0"
+	"github.com/obolnetwork/charon/app/eth2wrap"
+	"github.com/obolnetwork/charon/app/k1util"
 	"github.com/obolnetwork/charon/app/log"
 	"github.com/obolnetwork/charon/cluster"
 	"github.com/obolnetwork/charon/cluster/manifest"
 	ckeystore "github.com/obolnetwork/charon/eth2util/keystore"
+	"github.com/obolnetwork/charon/eth2util/signing"
 	"github.com/obolnetwork/charon/tbls"
 	"github.com/obolnetwork/charon/testutil"
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/protobuf/proto"
@@ -28,11 +35,13 @@ import (
 	"github.com/ObolNetwork/lido-dv-exit/app/obolapi"
 )
 
+const exitEpoch = phase0.Epoch(162304)
+
 func Test_RunFlow(t *testing.T) {
 	valAmt := 4
-	operatorAmt := 10
+	operatorAmt := 4
 
-	lock, _, keyShares := cluster.NewForT(
+	lock, enrs, keyShares := cluster.NewForT(
 		t,
 		valAmt,
 		operatorAmt,
@@ -66,6 +75,9 @@ func Test_RunFlow(t *testing.T) {
 		eDir := filepath.Join(ejectorDir, opId)
 		keysDir := filepath.Join(oDir, "validator_keys")
 		manifestFile := filepath.Join(oDir, "cluster-manifest.pb")
+
+		require.NoError(t, os.MkdirAll(oDir, 0755))
+		require.NoError(t, k1util.Save(enrs[opIdx], filepath.Join(oDir, "charon-enr-private-key")))
 
 		require.NoError(t, os.MkdirAll(keysDir, 0755))
 		require.NoError(t, os.MkdirAll(eDir, 0755))
@@ -134,4 +146,53 @@ func Test_RunFlow(t *testing.T) {
 	}
 
 	require.NoError(t, eg.Wait())
+
+	mockEth2Cl := eth2Client(t, context.Background(), bnapiServer.URL)
+
+	// check that all produced exit messages are signed by all partial keys for all operators
+	for opIdx := 0; opIdx < operatorAmt; opIdx++ {
+		opId := fmt.Sprintf("op%d", opIdx)
+
+		ejectorDir := filepath.Join(ejectorDir, opId)
+
+		for _, val := range lock.Validators {
+			eFile := filepath.Join(ejectorDir, fmt.Sprintf("validator-exit-%s.json", val.PublicKeyHex()))
+
+			fc, err := os.ReadFile(eFile)
+			require.NoError(t, err)
+
+			var exit obolapi.ExitBlob
+			require.NoError(t, json.Unmarshal(fc, &exit))
+
+			require.Equal(t, exit.PublicKey, val.PublicKeyHex())
+
+			sigRoot, err := exit.SignedExitMessage.Message.HashTreeRoot()
+			require.NoError(t, err)
+
+			domain, err := signing.GetDomain(context.Background(), mockEth2Cl, signing.DomainExit, exitEpoch)
+			require.NoError(t, err)
+
+			sigData, err := (&phase0.SigningData{ObjectRoot: sigRoot, Domain: domain}).HashTreeRoot()
+			require.NoError(t, err)
+
+			pubkBytes, err := val.PublicKey()
+			require.NoError(t, err)
+
+			require.NoError(t, tbls.Verify(pubkBytes, sigData[:], tbls.Signature(exit.SignedExitMessage.Signature)))
+		}
+	}
+}
+
+func eth2Client(t *testing.T, ctx context.Context, bnURL string) eth2wrap.Client {
+	t.Helper()
+
+	bnHttpClient, err := http.New(ctx,
+		http.WithAddress(bnURL),
+		http.WithLogLevel(zerolog.InfoLevel),
+	)
+
+	require.NoError(t, err)
+
+	bnClient := bnHttpClient.(*http.Service)
+	return eth2wrap.AdaptEth2HTTP(bnClient, 1*time.Second)
 }

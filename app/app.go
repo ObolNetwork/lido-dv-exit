@@ -54,6 +54,15 @@ func Run(ctx context.Context, config Config) error {
 		return errors.Wrap(err, "keystore load error")
 	}
 
+	shareIdx, err := keystore.ShareIdxForCluster(config.CharonRuntimeDir, cl)
+	if err != nil {
+		return errors.Wrap(err, "share idx for cluster")
+	}
+
+	ctx = log.WithCtx(ctx, z.Int("share_idx", shareIdx))
+
+	log.Info(ctx, "Lido-dv-exit starting")
+
 	valsKeys, err := keystore.KeyshareToValidatorPubkey(cl, keys)
 	if err != nil {
 		return errors.Wrap(err, "keystore load error")
@@ -79,11 +88,6 @@ func Run(ctx context.Context, config Config) error {
 			break // we finished signing everything we had to sign
 		}
 
-		log.Debug(ctx, "Available keyshares")
-		for k := range valsKeys {
-			log.Debug(ctx, string(k))
-		}
-
 		phase0Vals, err := valsKeys.ValidatorsPhase0()
 		if err != nil {
 			return errors.Wrap(err, "validator keys to phase0")
@@ -100,8 +104,6 @@ func Run(ctx context.Context, config Config) error {
 			validatorPubkStr := val.Validator.PublicKey.String()
 
 			ctx := log.WithCtx(ctx, z.Str("validator", validatorPubkStr))
-
-			log.Debug(ctx, "Processing")
 
 			if !shouldProcessValidator(val) {
 				log.Debug(ctx, "Not processing validator", z.Str("state", val.Status.String()))
@@ -121,10 +123,11 @@ func Run(ctx context.Context, config Config) error {
 				continue
 			}
 
+			log.Debug(ctx, "Signed exit")
 			signedExits = append(signedExits, obolapi.ExitBlob{
 				PublicKey:         validatorPubkStr,
 				SignedExitMessage: exit,
-				ShareIdx:          valKeyShare.Index,
+				ShareIdx:          shareIdx,
 			})
 
 			delete(valsKeys, keystore.ValidatorPubkey(validatorPubkStr))

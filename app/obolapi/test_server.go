@@ -81,6 +81,7 @@ func (ts *testServer) HandlePartialExit(writer http.ResponseWriter, request *htt
 	}
 
 	for _, exit := range data {
+		exit := exit
 		valFound := false
 
 		for _, lockVal := range lock.Validators {
