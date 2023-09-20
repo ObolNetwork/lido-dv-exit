@@ -33,7 +33,7 @@ func newRunCmd(root *cobra.Command, conf app.Config, entrypoint func(ctx context
 	cmd.Flags().StringVar(&conf.BeaconNodeURL, "beacon-node-url", "", "URL pointing to a running ethereum beacon node.")
 	cmd.Flags().StringVar(&conf.EjectorExitPath, "ejector-exit-path", "", "Filesystem path to store full exit.")
 	cmd.Flags().StringVar(&conf.CharonRuntimeDir, "charon-runtime-dir", "", "Charon directory, containing the validator_keys directory and manifest file or lock file.")
-	cmd.Flags().StringVar(&conf.ObolAPIURL, "obol-api-url", "https://api.obol.tech", "Obol API instance URL")
+	cmd.Flags().StringVar(&conf.ObolAPIURL, "obol-api-url", "https://api.obol.tech", "URL pointing to an obol API instance.")
 
 	bindLogFlags(root.Flags(), &conf.Log)
 
