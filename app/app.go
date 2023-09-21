@@ -21,7 +21,6 @@ import (
 	"github.com/obolnetwork/charon/app/z"
 	"github.com/obolnetwork/charon/eth2util/signing"
 	"github.com/obolnetwork/charon/tbls"
-	"github.com/rs/zerolog"
 
 	"github.com/ObolNetwork/lido-dv-exit/app/bnapi"
 	"github.com/ObolNetwork/lido-dv-exit/app/keystore"
@@ -239,7 +238,7 @@ func signExit(ctx context.Context, eth2Cl eth2wrap.Client, valIdx eth2p0.Validat
 func eth2Client(ctx context.Context, bnURL string) (eth2wrap.Client, error) {
 	bnHttpClient, err := http.New(ctx,
 		http.WithAddress(bnURL),
-		http.WithLogLevel(zerolog.InfoLevel),
+		http.WithLogLevel(1), // zerolog.InfoLevel
 	)
 
 	if err != nil {
