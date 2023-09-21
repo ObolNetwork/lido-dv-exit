@@ -3,6 +3,8 @@
 package keystore
 
 import (
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"fmt"
 	"os"
@@ -169,6 +171,18 @@ func ShareIdxForCluster(dir string, cl *manifestpb.Cluster) (int, error) {
 	}
 
 	return shareIdx, nil
+}
+
+// AuthTokenFromIdentityKey returns the hash of the charon identity key associated with the node in base64 form.
+func AuthTokenFromIdentityKey(dir string) (string, error) {
+	idKey, err := loadIdentityKey(dir)
+	if err != nil {
+		return "", errors.Wrap(err, "enr")
+	}
+
+	h := sha256.Sum256(idKey.PubKey.SerializeCompressed())
+
+	return base64.StdEncoding.EncodeToString(h[:]), nil
 }
 
 // KeyshareToValidatorPubkey maps each share in cl to the associated validator private key.

@@ -58,6 +58,11 @@ func Run(ctx context.Context, config Config) error {
 		return errors.Wrap(err, "share idx for cluster")
 	}
 
+	obolAPIAuthToken, err := keystore.AuthTokenFromIdentityKey(config.CharonRuntimeDir)
+	if err != nil {
+		return errors.Wrap(err, "obol auth token generation")
+	}
+
 	ctx = log.WithCtx(ctx, z.Int("share_idx", shareIdx))
 
 	log.Info(ctx, "Lido-dv-exit starting")
@@ -136,7 +141,7 @@ func Run(ctx context.Context, config Config) error {
 	// send signed  exit to obol api
 	for range tick.C {
 		// we're retrying every second until we succeeed
-		if err := oApi.PostPartialExit("0x"+hex.EncodeToString(cl.GetInitialMutationHash()), signedExits...); err != nil {
+		if err := oApi.PostPartialExit("0x"+hex.EncodeToString(cl.GetInitialMutationHash()), obolAPIAuthToken, signedExits...); err != nil {
 			log.Error(ctx, "Cannot post exits to obol api", err)
 			continue
 		}
@@ -152,7 +157,7 @@ func Run(ctx context.Context, config Config) error {
 		exitFSPath := filepath.Join(config.EjectorExitPath, fmt.Sprintf("validator-exit-%s.json", validatorPubkey))
 
 		for range tick.C {
-			fullExit, err := oApi.GetFullExit(validatorPubkey)
+			fullExit, err := oApi.GetFullExit(validatorPubkey, obolAPIAuthToken)
 			if err != nil {
 				if !errors.Is(err, obolapi.ErrNoExit) {
 					log.Warn(ctx, "Cannot fetch full exit from obol api, will retry", err)

@@ -88,11 +88,11 @@ func TestAPIFlow(t *testing.T) {
 
 		// send all the partial exits
 		for _, exit := range exits {
-			require.NoError(t, cl.PostPartialExit(lockHash, exit))
+			require.NoError(t, cl.PostPartialExit(lockHash, "token", exit))
 		}
 
 		// get full exit
-		fullExit, err := cl.GetFullExit(lock.Validators[0].PublicKeyHex())
+		fullExit, err := cl.GetFullExit(lock.Validators[0].PublicKeyHex(), "token")
 		require.NoError(t, err)
 
 		valPubk, err := lock.Validators[0].PublicKey()

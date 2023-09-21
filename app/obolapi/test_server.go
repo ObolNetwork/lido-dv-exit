@@ -3,6 +3,7 @@
 package obolapi
 
 import (
+	"context"
 	"encoding/hex"
 	"encoding/json"
 	"net/http"
@@ -13,9 +14,16 @@ import (
 	eth2p0 "github.com/attestantio/go-eth2-client/spec/phase0"
 	"github.com/gorilla/mux"
 	"github.com/obolnetwork/charon/app/errors"
+	"github.com/obolnetwork/charon/app/log"
 	"github.com/obolnetwork/charon/cluster"
 	"github.com/obolnetwork/charon/tbls"
 	"github.com/obolnetwork/charon/tbls/tblsconv"
+)
+
+type contextKey string
+
+const (
+	tokenContextKey contextKey = "token"
 )
 
 type tsError struct {
@@ -46,6 +54,10 @@ type testServer struct {
 
 	// store the completed exits by the validator pubkey
 	fullExits map[string]ExitBlob
+
+	// store for each validator, a set of tokens which are authorized to retrieve a given full exit message
+	// the token is a base64-encoded string
+	authTokens map[string]map[string]bool
 }
 
 // addLockFiles adds a set of lock files to ts.
@@ -59,6 +71,12 @@ func (ts *testServer) addLockFiles(lock cluster.Lock) {
 func (ts *testServer) HandlePartialExit(writer http.ResponseWriter, request *http.Request) {
 	ts.lock.Lock()
 	defer ts.lock.Unlock()
+
+	authToken, ok := request.Context().Value(tokenContextKey).(string)
+	if !ok {
+		log.Error(request.Context(), "received context without token, that's impossible!", nil)
+		return
+	}
 
 	vars := mux.Vars(request)
 
@@ -106,9 +124,21 @@ func (ts *testServer) HandlePartialExit(writer http.ResponseWriter, request *htt
 			return
 		}
 
+		if len(ts.partialExits[exit.PublicKey])+1 > lock.Threshold { // we're already at threshold
+			writeErr(writer, http.StatusBadRequest, "already at threshold for selected validator")
+		}
+
 		ts.partialExits[exit.PublicKey] = append(ts.partialExits[exit.PublicKey], exit)
 
-		if len(ts.partialExits[exit.PublicKey]) >= lock.Threshold {
+		am, ok := ts.authTokens[exit.PublicKey]
+		if !ok {
+			ts.authTokens[exit.PublicKey] = map[string]bool{}
+			am = ts.authTokens[exit.PublicKey]
+		}
+
+		am[authToken] = true
+
+		if len(ts.partialExits[exit.PublicKey]) == lock.Threshold {
 			// do aggregation and cache exit
 			rawSignatures := make(map[int]tbls.Signature)
 
@@ -142,9 +172,26 @@ func (ts *testServer) HandleFullExit(writer http.ResponseWriter, request *http.R
 	ts.lock.Lock()
 	defer ts.lock.Unlock()
 
+	authToken, ok := request.Context().Value(tokenContextKey).(string)
+	if !ok {
+		log.Error(request.Context(), "received context without token, that's impossible!", nil)
+		return
+	}
+
 	vars := mux.Vars(request)
 
 	valPubkey := vars["validator_pubkey"]
+
+	am, ok := ts.authTokens[valPubkey]
+	if !ok {
+		writeErr(writer, http.StatusUnauthorized, "no validator associated with auth token")
+		return
+	}
+
+	if _, ok := am[authToken]; !ok {
+		writeErr(writer, http.StatusUnauthorized, "auth token for validator refused")
+		return
+	}
 
 	exit, ok := ts.fullExits[valPubkey]
 	if !ok {
@@ -174,12 +221,30 @@ func GenerateTestServer(_ *testing.T) (http.Handler, func(lock cluster.Lock)) {
 		partialExits: map[string]PartialExits{},
 		lockFiles:    map[string]cluster.Lock{},
 		fullExits:    map[string]ExitBlob{},
+		authTokens:   map[string]map[string]bool{},
 	}
 
 	router := mux.NewRouter()
+
+	router.Use(authMiddleware)
 
 	router.HandleFunc(partialExitTmpl, ts.HandlePartialExit).Methods(http.MethodPost)
 	router.HandleFunc(fullExitTmpl, ts.HandleFullExit).Methods(http.MethodGet)
 
 	return router, ts.addLockFiles
+}
+
+func authMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		bearer := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer")
+		bearer = strings.TrimSpace(bearer)
+		if bearer == "" {
+			writeErr(w, http.StatusUnauthorized, "missing authorization header")
+		}
+
+		r = r.WithContext(context.WithValue(r.Context(), tokenContextKey, bearer))
+
+		// compare the return-value to the authMW
+		next.ServeHTTP(w, r)
+	})
 }

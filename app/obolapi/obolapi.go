@@ -5,6 +5,7 @@ package obolapi
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
@@ -30,6 +31,10 @@ func partialExitURL(lockHash string) string {
 	).Replace(partialExitTmpl)
 }
 
+func bearerString(token string) string {
+	return fmt.Sprintf("Bearer %s", token)
+}
+
 // TODO(gsora): validate public key
 func fullExitURL(valPubkey string) string {
 	return strings.NewReplacer(
@@ -53,7 +58,7 @@ type Client struct {
 }
 
 // PostPartialExit POSTs the set of msg's to the Obol API, for a given lock hash.
-func (c Client) PostPartialExit(lockHash string, msg ...ExitBlob) error {
+func (c Client) PostPartialExit(lockHash string, authToken string, msg ...ExitBlob) error {
 	path := partialExitURL(lockHash)
 
 	u, err := url.ParseRequestURI(c.ObolAPIUrl)
@@ -68,7 +73,15 @@ func (c Client) PostPartialExit(lockHash string, msg ...ExitBlob) error {
 		return errors.Wrap(err, "json marshal error")
 	}
 
-	resp, err := http.Post(u.String(), "application/json", bytes.NewReader(data))
+	req, err := http.NewRequest(http.MethodPost, u.String(), bytes.NewReader(data))
+	if err != nil {
+		return errors.Wrap(err, "http new post request")
+	}
+
+	req.Header.Set("Authorization", bearerString(authToken))
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return errors.Wrap(err, "http post error")
 	}
@@ -81,7 +94,7 @@ func (c Client) PostPartialExit(lockHash string, msg ...ExitBlob) error {
 }
 
 // GetFullExit gets the full exit message for a given validator public key.
-func (c Client) GetFullExit(valPubkey string) (ExitBlob, error) {
+func (c Client) GetFullExit(valPubkey string, authToken string) (ExitBlob, error) {
 	path := fullExitURL(valPubkey)
 
 	u, err := url.ParseRequestURI(c.ObolAPIUrl)
@@ -91,7 +104,15 @@ func (c Client) GetFullExit(valPubkey string) (ExitBlob, error) {
 
 	u.Path = path
 
-	resp, err := http.Get(u.String())
+	req, err := http.NewRequest(http.MethodGet, u.String(), nil)
+	if err != nil {
+		return ExitBlob{}, errors.Wrap(err, "http new post request")
+	}
+
+	req.Header.Set("Authorization", bearerString(authToken))
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return ExitBlob{}, errors.Wrap(err, "http get error")
 	}
