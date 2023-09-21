@@ -9,10 +9,13 @@ import (
 	"path/filepath"
 
 	"github.com/attestantio/go-eth2-client/spec/phase0"
+	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/obolnetwork/charon/app/errors"
+	"github.com/obolnetwork/charon/app/k1util"
 	"github.com/obolnetwork/charon/cluster"
 	"github.com/obolnetwork/charon/cluster/manifest"
 	manifestpb "github.com/obolnetwork/charon/cluster/manifestpb/v1"
+	"github.com/obolnetwork/charon/eth2util/enr"
 	ckeystore "github.com/obolnetwork/charon/eth2util/keystore"
 	"github.com/obolnetwork/charon/tbls"
 	"github.com/obolnetwork/charon/tbls/tblsconv"
@@ -118,6 +121,56 @@ func LoadManifest(dir string) (*manifestpb.Cluster, []tbls.PrivateKey, error) {
 	return cl, secrets, nil
 }
 
+// loadIdentityKey loads the ENR identity key from dir.
+func loadIdentityKey(dir string) (enr.Record, error) {
+	key, err := k1util.Load(filepath.Join(dir, "charon-enr-private-key"))
+	if err != nil {
+		return enr.Record{}, errors.Wrap(err, "load priv key")
+	}
+
+	e, err := enr.New(key)
+	if err != nil {
+		return enr.Record{}, errors.Wrap(err, "enr new")
+	}
+
+	return e, nil
+}
+
+// ShareIdxForCluster returns the share index for the Charon cluster's ENR identity key, given a *manifestpb.Cluster.
+func ShareIdxForCluster(dir string, cl *manifestpb.Cluster) (int, error) {
+	pids, err := manifest.ClusterPeerIDs(cl)
+	if err != nil {
+		return 0, errors.Wrap(err, "cluster peer ids")
+	}
+
+	idKey, err := loadIdentityKey(dir)
+	if err != nil {
+		return 0, errors.Wrap(err, "enr")
+	}
+
+	k := crypto.Secp256k1PublicKey(*idKey.PubKey)
+
+	shareIdx := -1
+	for _, pid := range pids {
+		if !pid.MatchesPublicKey(&k) {
+			continue
+		}
+
+		nIdx, err := manifest.ClusterNodeIdx(cl, pid)
+		if err != nil {
+			return 0, errors.Wrap(err, "cluster node idx")
+		}
+
+		shareIdx = nIdx.ShareIdx
+	}
+
+	if shareIdx == -1 {
+		return 0, errors.New("node index for loaded enr not found in cluster lock")
+	}
+
+	return shareIdx, nil
+}
+
 // KeyshareToValidatorPubkey maps each share in cl to the associated validator private key.
 // It returns an error if a keyshare does not appear in cl, or if there's a validator public key associated to no
 // keyshare.
@@ -152,7 +205,7 @@ func KeyshareToValidatorPubkey(cl *manifestpb.Cluster, shares []tbls.PrivateKey)
 
 			ret[ValidatorPubkey(valHex)] = KeyShare{
 				Share: shares[shareIdx],
-				Index: shareIdx,
+				Index: shareIdx + 1,
 			}
 			found = true
 			break

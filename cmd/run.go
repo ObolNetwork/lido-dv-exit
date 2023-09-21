@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 
-	libp2plog "github.com/ipfs/go-log/v2"
 	"github.com/obolnetwork/charon/app/errors"
 	"github.com/obolnetwork/charon/app/log"
 	"github.com/spf13/cobra"
@@ -16,41 +15,36 @@ import (
 	"github.com/ObolNetwork/lido-dv-exit/app"
 )
 
-// Run runs lido-dv-exit.
-func Run(ctx context.Context) error {
-	return New(app.Run).ExecuteContext(ctx)
-}
-
-// New returns a new root cobra command that executes lido-dv-exit.
-func New(entrypoint func(ctx context.Context, config app.Config) error) *cobra.Command {
-	var conf app.Config
-
-	root := &cobra.Command{
-		Use:   "lido-exit-dv",
-		Short: "Validator exit tool for Lido",
+// newRunCmd adds the "run" command to root.
+func newRunCmd(root *cobra.Command, conf app.Config, entrypoint func(ctx context.Context, config app.Config) error) {
+	cmd := &cobra.Command{
+		Use:   "run",
+		Short: "Runs lido-dv-exit",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := log.InitLogger(conf.Log); err != nil {
 				return err
 			}
-			libp2plog.SetPrimaryCore(log.LoggerCore()) // Set libp2p logger to use charon logger
 
 			log.Info(cmd.Context(), "Parsed config", flagsToLogFields(cmd.Flags())...)
 
 			return entrypoint(cmd.Context(), conf)
 		},
 	}
+	cmd.Flags().StringVar(&conf.BeaconNodeURL, "beacon-node-url", "", "URL pointing to a running ethereum beacon node.")
+	cmd.Flags().StringVar(&conf.EjectorExitPath, "ejector-exit-path", "", "Filesystem path to store full exit.")
+	cmd.Flags().StringVar(&conf.CharonRuntimeDir, "charon-runtime-dir", "", "Charon directory, containing the validator_keys directory and manifest file or lock file.")
+	cmd.Flags().StringVar(&conf.ObolAPIURL, "obol-api-url", "https://api.obol.tech", "URL pointing to an obol API instance.")
 
 	bindLogFlags(root.Flags(), &conf.Log)
 
-	root.Flags().StringVar(&conf.BeaconNodeURL, "beacon-node-url", "", "URL pointing to a running beacon node")
-	root.Flags().StringVar(&conf.EjectorExitPath, "ejector-exit-path", "", "Filesystem path to store full exit.")
-	root.Flags().StringVar(&conf.CharonRuntimeDir, "charon-runtime-dir", "", "Charon directory, containing the validator_keys directory and manifest file or lock file.")
-
-	wrapPreRunE(root, func(cmd *cobra.Command, args []string) error {
+	wrapPreRunE(cmd, func(cmd *cobra.Command, args []string) error {
 		if _, err := url.ParseRequestURI(conf.BeaconNodeURL); err != nil {
 			return errors.New("beacon-node-url does not contain a vaild URL")
 		}
 
+		if err := dirWritable(conf.EjectorExitPath); err != nil {
+			return errors.Wrap(err, "can't access ejector exit path")
+		}
 		if err := dirWritable(conf.EjectorExitPath); err != nil {
 			return errors.Wrap(err, "can't access ejector exit path")
 		}
@@ -62,7 +56,7 @@ func New(entrypoint func(ctx context.Context, config app.Config) error) *cobra.C
 		return nil
 	})
 
-	return root
+	root.AddCommand(cmd)
 }
 
 func dirWritable(dir string) error {

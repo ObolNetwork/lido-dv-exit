@@ -6,8 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"testing"
-	"time"
 
 	ethApi "github.com/attestantio/go-eth2-client/api/v1"
 	"github.com/attestantio/go-eth2-client/spec/phase0"
@@ -79,7 +79,7 @@ func MockValidatorAPIForT(_ *testing.T, validators map[string]ethApi.Validator) 
 	return func(writer http.ResponseWriter, request *http.Request) {
 		vars := mux.Vars(request)
 
-		valID := request.URL.Query().Get("id")
+		valIDs := strings.Split(request.URL.Query().Get("id"), ",")
 		rawStateID := vars["state_id"]
 
 		stateID := stringToStateID(rawStateID)
@@ -99,28 +99,30 @@ func MockValidatorAPIForT(_ *testing.T, validators map[string]ethApi.Validator) 
 			return
 		}
 
-		valStatus, ok := validators[valID]
+		var ret retContainer
 
-		if !ok {
-			errBytes, err := json.Marshal(Error{
-				Code:    http.StatusNotFound,
-				Message: "Validator not found",
-			})
+		for _, valID := range valIDs {
+			valStatus, ok := validators[valID]
 
-			if err != nil {
-				panic(err) // fine here, it's a test
+			if !ok {
+				errBytes, err := json.Marshal(Error{
+					Code:    http.StatusNotFound,
+					Message: "Validator not found",
+				})
+
+				if err != nil {
+					panic(err) // fine here, it's a test
+				}
+
+				writer.WriteHeader(http.StatusNotFound)
+				_, _ = writer.Write(errBytes)
+				return
 			}
 
-			writer.WriteHeader(http.StatusNotFound)
-			_, _ = writer.Write(errBytes)
-			return
+			ret.Data = append(ret.Data, &valStatus)
 		}
 
-		if err := json.NewEncoder(writer).Encode(retContainer{
-			Data: []*ethApi.Validator{
-				&valStatus,
-			},
-		}); err != nil {
+		if err := json.NewEncoder(writer).Encode(ret); err != nil {
 			errBytes, err := json.Marshal(Error{
 				Code:    http.StatusInternalServerError,
 				Message: "Internal server error",
@@ -141,17 +143,33 @@ func MockBeaconNodeForT(t *testing.T, validators map[string]ethApi.Validator) ht
 	router := mux.NewRouter()
 
 	router.HandleFunc("/eth/v1/beacon/genesis", func(writer http.ResponseWriter, request *http.Request) {
-		_ = json.NewEncoder(writer).Encode(&ethApi.Genesis{
-			GenesisTime:           time.Now(),
-			GenesisValidatorsRoot: phase0.Root{},
-			GenesisForkVersion:    phase0.Version{},
+		_ = json.NewEncoder(writer).Encode(struct {
+			Data struct {
+				GenesisTime           string `json:"genesis_time"`
+				GenesisValidatorsRoot string `json:"genesis_validators_root"`
+				GenesisForkVersion    string `json:"genesis_fork_version"`
+			} `json:"data"`
+		}{
+			Data: struct {
+				GenesisTime           string `json:"genesis_time"`
+				GenesisValidatorsRoot string `json:"genesis_validators_root"`
+				GenesisForkVersion    string `json:"genesis_fork_version"`
+			}{
+				GenesisTime:           "1616508000",
+				GenesisValidatorsRoot: "0x043db0d9a83813551ee2f33450d23797757d430911a9320530ad8a0eabc43efb",
+				GenesisForkVersion:    "0x00001020",
+			},
 		})
 	})
 
 	router.HandleFunc("/eth/v1/config/spec", func(writer http.ResponseWriter, request *http.Request) {
 		_ = json.NewEncoder(writer).Encode(struct {
 			Data map[string]string `json:"data"`
-		}{})
+		}{
+			Data: map[string]string{
+				"DOMAIN_VOLUNTARY_EXIT": "0x04000000",
+			},
+		})
 	})
 
 	router.HandleFunc("/eth/v1/config/deposit_contract", func(writer http.ResponseWriter, request *http.Request) {
@@ -163,7 +181,15 @@ func MockBeaconNodeForT(t *testing.T, validators map[string]ethApi.Validator) ht
 	router.HandleFunc("/eth/v1/config/fork_schedule", func(writer http.ResponseWriter, request *http.Request) {
 		_ = json.NewEncoder(writer).Encode(struct {
 			Data []*phase0.Fork `json:"data"`
-		}{})
+		}{
+			Data: []*phase0.Fork{
+				{
+					PreviousVersion: phase0.Version{02, 00, 10, 20},
+					CurrentVersion:  phase0.Version{03, 00, 10, 20},
+					Epoch:           phase0.Epoch(162304),
+				},
+			},
+		})
 	})
 
 	router.HandleFunc("/eth/v1/node/version", func(writer http.ResponseWriter, request *http.Request) {

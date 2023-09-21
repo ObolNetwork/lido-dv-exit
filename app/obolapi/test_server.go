@@ -53,7 +53,7 @@ func (ts *testServer) addLockFiles(lock cluster.Lock) {
 	ts.lock.Lock()
 	defer ts.lock.Unlock()
 
-	ts.lockFiles[hex.EncodeToString(lock.LockHash)] = lock
+	ts.lockFiles["0x"+hex.EncodeToString(lock.LockHash)] = lock
 }
 
 func (ts *testServer) HandlePartialExit(writer http.ResponseWriter, request *http.Request) {
@@ -81,6 +81,7 @@ func (ts *testServer) HandlePartialExit(writer http.ResponseWriter, request *htt
 	}
 
 	for _, exit := range data {
+		exit := exit
 		valFound := false
 
 		for _, lockVal := range lock.Validators {
@@ -100,7 +101,7 @@ func (ts *testServer) HandlePartialExit(writer http.ResponseWriter, request *htt
 		}
 
 		// check that the last partial exit's data is the same as the new one
-		if len(ts.partialExits) > 0 && !ts.partialExitsMatch(exit) {
+		if len(ts.partialExits[exit.PublicKey]) > 0 && !ts.partialExitsMatch(exit) {
 			writeErr(writer, http.StatusBadRequest, "wrong partial exit for the selected validator")
 			return
 		}
@@ -165,6 +166,8 @@ func (ts *testServer) partialExitsMatch(newOne ExitBlob) bool {
 	return *last.SignedExitMessage.Message == *newOne.SignedExitMessage.Message
 }
 
+// GenerateTestServer generates a obol API mock test server.
+// It returns a http.Handler to be served over HTTP, and a function to add cluster lock files to its database.
 func GenerateTestServer(_ *testing.T) (http.Handler, func(lock cluster.Lock)) {
 	ts := testServer{
 		lock:         sync.Mutex{},

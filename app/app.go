@@ -39,6 +39,8 @@ type Config struct {
 
 	// TODO: check that the directory exists, keystore.LoadManifest will check the format is appropriate.
 	CharonRuntimeDir string
+
+	ObolAPIURL string
 }
 
 // Run runs the lido-dv-exit core logic.
@@ -51,6 +53,15 @@ func Run(ctx context.Context, config Config) error {
 		return errors.Wrap(err, "keystore load error")
 	}
 
+	shareIdx, err := keystore.ShareIdxForCluster(config.CharonRuntimeDir, cl)
+	if err != nil {
+		return errors.Wrap(err, "share idx for cluster")
+	}
+
+	ctx = log.WithCtx(ctx, z.Int("share_idx", shareIdx))
+
+	log.Info(ctx, "Lido-dv-exit starting")
+
 	valsKeys, err := keystore.KeyshareToValidatorPubkey(cl, keys)
 	if err != nil {
 		return errors.Wrap(err, "keystore load error")
@@ -59,18 +70,13 @@ func Run(ctx context.Context, config Config) error {
 	// TODO(gsora): cross-check the lido-ejector exits already present with valsKeys, so that we don't
 	// re-process what's already been processed.
 
-	phase0Vals, err := valsKeys.ValidatorsPhase0()
-	if err != nil {
-		return errors.Wrap(err, "validator keys to phase0")
-	}
-
 	bnClient, err := eth2Client(ctx, config.BeaconNodeURL)
 	if err != nil {
 		return errors.Wrap(err, "can't connect to beacon node")
 	}
 
 	// TODO(gsora): check obol api url, see if correct
-	oApi := obolapi.Client{ObolAPIUrl: "https://api.obol.tech"}
+	oApi := obolapi.Client{ObolAPIUrl: config.ObolAPIURL}
 
 	tick := time.NewTicker(1 * time.Second)
 
@@ -81,6 +87,11 @@ func Run(ctx context.Context, config Config) error {
 			break // we finished signing everything we had to sign
 		}
 
+		phase0Vals, err := valsKeys.ValidatorsPhase0()
+		if err != nil {
+			return errors.Wrap(err, "validator keys to phase0")
+		}
+
 		// TODO(gsora): calling with finalized here, need to understand what's better
 		valIndices, err := bnClient.ValidatorsByPubKey(ctx, bnapi.StateIDFinalized.String(), phase0Vals)
 		if err != nil {
@@ -89,7 +100,7 @@ func Run(ctx context.Context, config Config) error {
 		}
 
 		for valIndex, val := range valIndices {
-			validatorPubkStr := "0x" + val.Validator.PublicKey.String()
+			validatorPubkStr := val.Validator.PublicKey.String()
 
 			ctx := log.WithCtx(ctx, z.Str("validator", validatorPubkStr))
 
@@ -111,10 +122,11 @@ func Run(ctx context.Context, config Config) error {
 				continue
 			}
 
+			log.Debug(ctx, "Signed exit")
 			signedExits = append(signedExits, obolapi.ExitBlob{
 				PublicKey:         validatorPubkStr,
 				SignedExitMessage: exit,
-				ShareIdx:          valKeyShare.Index,
+				ShareIdx:          shareIdx,
 			})
 
 			delete(valsKeys, keystore.ValidatorPubkey(validatorPubkStr))
@@ -157,6 +169,8 @@ func Run(ctx context.Context, config Config) error {
 			if err := os.WriteFile(exitFSPath, data, 0755); err != nil {
 				log.Warn(ctx, "Cannot write exit to filesystem path", err, z.Str("destination_path", exitFSPath))
 			}
+
+			break
 		}
 
 		return struct{}{}, nil
@@ -173,6 +187,8 @@ func Run(ctx context.Context, config Config) error {
 	if err != nil {
 		return errors.Wrap(err, "fatal error while processing full exits from obol api, please get in contact with the development team as soon as possible, with a full log of the execution!")
 	}
+
+	log.Info(ctx, "Successfully fetched exit messages!")
 
 	return nil
 }
@@ -222,6 +238,7 @@ func signExit(ctx context.Context, eth2Cl eth2wrap.Client, valIdx eth2p0.Validat
 func eth2Client(ctx context.Context, bnURL string) (eth2wrap.Client, error) {
 	bnHttpClient, err := http.New(ctx,
 		http.WithAddress(bnURL),
+		http.WithLogLevel(1), // zerolog.InfoLevel
 	)
 
 	if err != nil {

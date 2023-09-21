@@ -3,7 +3,7 @@ FROM golang:1.20.7-bullseye AS builder
 # Install dependencies
 RUN apt-get update && apt-get install -y build-essential git
 # Prep and copy source
-WORKDIR /app/charon
+WORKDIR /app/lido-dv-exit
 COPY . .
 # Populate GO_BUILD_FLAG with a build arg to provide an optional go build flag.
 ARG GO_BUILD_FLAG
