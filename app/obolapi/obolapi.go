@@ -107,7 +107,7 @@ func (c Client) GetFullExit(ctx context.Context, valPubkey string, authToken str
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
-		return ExitBlob{}, errors.Wrap(err, "http new post request")
+		return ExitBlob{}, errors.Wrap(err, "http new get request")
 	}
 
 	req.Header.Set("Authorization", bearerString(authToken))
