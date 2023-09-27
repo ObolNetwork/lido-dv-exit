@@ -177,7 +177,7 @@ func ShareIdxForCluster(dir string, cl *manifestpb.Cluster) (int, error) {
 func AuthTokenFromIdentityKey(dir string) (string, error) {
 	idKey, err := loadIdentityKey(dir)
 	if err != nil {
-		return "", errors.Wrap(err, "enr")
+		return "", errors.Wrap(err, "load identity key")
 	}
 
 	h := sha256.Sum256(idKey.PubKey.SerializeCompressed())
