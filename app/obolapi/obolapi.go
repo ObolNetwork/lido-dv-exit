@@ -4,6 +4,7 @@ package obolapi
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -58,7 +59,7 @@ type Client struct {
 }
 
 // PostPartialExit POSTs the set of msg's to the Obol API, for a given lock hash.
-func (c Client) PostPartialExit(lockHash string, authToken string, msg ...ExitBlob) error {
+func (c Client) PostPartialExit(ctx context.Context, lockHash string, authToken string, msg ...ExitBlob) error {
 	path := partialExitURL(lockHash)
 
 	u, err := url.ParseRequestURI(c.ObolAPIUrl)
@@ -73,7 +74,7 @@ func (c Client) PostPartialExit(lockHash string, authToken string, msg ...ExitBl
 		return errors.Wrap(err, "json marshal error")
 	}
 
-	req, err := http.NewRequest(http.MethodPost, u.String(), bytes.NewReader(data))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u.String(), bytes.NewReader(data))
 	if err != nil {
 		return errors.Wrap(err, "http new post request")
 	}
@@ -94,7 +95,7 @@ func (c Client) PostPartialExit(lockHash string, authToken string, msg ...ExitBl
 }
 
 // GetFullExit gets the full exit message for a given validator public key.
-func (c Client) GetFullExit(valPubkey string, authToken string) (ExitBlob, error) {
+func (c Client) GetFullExit(ctx context.Context, valPubkey string, authToken string) (ExitBlob, error) {
 	path := fullExitURL(valPubkey)
 
 	u, err := url.ParseRequestURI(c.ObolAPIUrl)
@@ -104,7 +105,7 @@ func (c Client) GetFullExit(valPubkey string, authToken string) (ExitBlob, error
 
 	u.Path = path
 
-	req, err := http.NewRequest(http.MethodGet, u.String(), nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
 		return ExitBlob{}, errors.Wrap(err, "http new post request")
 	}
