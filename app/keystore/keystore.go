@@ -173,7 +173,7 @@ func ShareIdxForCluster(dir string, cl *manifestpb.Cluster) (int, error) {
 	return shareIdx, nil
 }
 
-// AuthTokenFromIdentityKey returns the hash of the charon identity key associated with the node in base64 form.
+// AuthTokenFromIdentityKey returns the hash of the charon identity public key associated with the node in base64 form.
 func AuthTokenFromIdentityKey(dir string) (string, error) {
 	idKey, err := loadIdentityKey(dir)
 	if err != nil {
