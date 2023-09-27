@@ -124,8 +124,9 @@ func (ts *testServer) HandlePartialExit(writer http.ResponseWriter, request *htt
 			return
 		}
 
-		if len(ts.partialExits[exit.PublicKey])+1 > lock.Threshold { // we're already at threshold
+		if len(ts.partialExits[exit.PublicKey])+1 > len(lock.Operators) { // we're already at threshold
 			writeErr(writer, http.StatusBadRequest, "already at threshold for selected validator")
+			return
 		}
 
 		ts.partialExits[exit.PublicKey] = append(ts.partialExits[exit.PublicKey], exit)
@@ -138,7 +139,7 @@ func (ts *testServer) HandlePartialExit(writer http.ResponseWriter, request *htt
 
 		am[authToken] = true
 
-		if len(ts.partialExits[exit.PublicKey]) == lock.Threshold {
+		if len(ts.partialExits[exit.PublicKey]) == len(lock.Operators) {
 			// do aggregation and cache exit
 			rawSignatures := make(map[int]tbls.Signature)
 
