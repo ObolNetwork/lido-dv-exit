@@ -58,6 +58,11 @@ func Run(ctx context.Context, config Config) error {
 		return errors.Wrap(err, "share idx for cluster")
 	}
 
+	obolAPIAuthToken, err := keystore.AuthTokenFromIdentityKey(config.CharonRuntimeDir)
+	if err != nil {
+		return errors.Wrap(err, "obol auth token generation")
+	}
+
 	ctx = log.WithCtx(ctx, z.Int("share_idx", shareIdx))
 
 	log.Info(ctx, "Lido-dv-exit starting")
@@ -136,13 +141,10 @@ func Run(ctx context.Context, config Config) error {
 	// send signed  exit to obol api
 	for range tick.C {
 		// we're retrying every second until we succeeed
-		if err := oApi.PostPartialExit("0x"+hex.EncodeToString(cl.GetInitialMutationHash()), signedExits...); err != nil {
-			log.Error(ctx, "Cannot post exits to obol api", err)
-			continue
+		if postPartialExit(ctx, oApi, obolAPIAuthToken, cl.GetInitialMutationHash(), signedExits...) {
+			tick.Stop()
+			break
 		}
-
-		tick.Stop()
-		break
 	}
 
 	fork, join, fjcancel := forkjoin.New(ctx, func(ctx context.Context, validatorPubkey string) (struct{}, error) {
@@ -152,25 +154,9 @@ func Run(ctx context.Context, config Config) error {
 		exitFSPath := filepath.Join(config.EjectorExitPath, fmt.Sprintf("validator-exit-%s.json", validatorPubkey))
 
 		for range tick.C {
-			fullExit, err := oApi.GetFullExit(validatorPubkey)
-			if err != nil {
-				if !errors.Is(err, obolapi.ErrNoExit) {
-					log.Warn(ctx, "Cannot fetch full exit from obol api, will retry", err)
-				}
-				continue
+			if fetchFullExit(ctx, oApi, validatorPubkey, obolAPIAuthToken, exitFSPath) {
+				break
 			}
-
-			data, err := json.Marshal(fullExit)
-			if err != nil {
-				log.Warn(ctx, "Cannot marshal exit to json", err)
-				continue
-			}
-
-			if err := os.WriteFile(exitFSPath, data, 0755); err != nil {
-				log.Warn(ctx, "Cannot write exit to filesystem path", err, z.Str("destination_path", exitFSPath))
-			}
-
-			break
 		}
 
 		return struct{}{}, nil
@@ -184,13 +170,58 @@ func Run(ctx context.Context, config Config) error {
 
 	_, err = join().Flatten()
 
-	if err != nil {
+	if err != nil && !errors.Is(err, context.Canceled) {
 		return errors.Wrap(err, "fatal error while processing full exits from obol api, please get in contact with the development team as soon as possible, with a full log of the execution!")
 	}
 
 	log.Info(ctx, "Successfully fetched exit messages!")
 
 	return nil
+}
+
+// fetchFullExit returns true if a full exit was received from the Obol API, and was written in exitFSPath.
+// Each HTTP request has a 10 seconds timeout.
+func fetchFullExit(ctx context.Context, oApi obolapi.Client, validatorPubkey, obolAPIAuthToken, exitFSPath string) bool {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	fullExit, err := oApi.GetFullExit(ctx, validatorPubkey, obolAPIAuthToken)
+
+	if err != nil {
+		if !errors.Is(err, obolapi.ErrNoExit) {
+			log.Warn(ctx, "Cannot fetch full exit from obol api, will retry", err)
+		}
+
+		return false
+	}
+
+	data, err := json.Marshal(fullExit)
+	if err != nil {
+		log.Warn(ctx, "Cannot marshal exit to json", err)
+
+		return false
+	}
+
+	if err := os.WriteFile(exitFSPath, data, 0755); err != nil {
+		log.Warn(ctx, "Cannot write exit to filesystem path", err, z.Str("destination_path", exitFSPath))
+		return false
+	}
+
+	return true
+}
+
+func postPartialExit(ctx context.Context, oApi obolapi.Client, obolAPIAuthToken string, mutationHash []byte, signedExits ...obolapi.ExitBlob) bool {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	lockHash := "0x" + hex.EncodeToString(mutationHash)
+	// we're retrying every second until we succeeed
+	if err := oApi.PostPartialExit(ctx, lockHash, obolAPIAuthToken, signedExits...); err != nil {
+		log.Error(ctx, "Cannot post exits to obol api", err)
+		return false
+	}
+
+	return true
 }
 
 // TODO(gsora): check this logic with the team

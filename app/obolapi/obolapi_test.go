@@ -86,13 +86,15 @@ func TestAPIFlow(t *testing.T) {
 
 		cl := obolapi.Client{ObolAPIUrl: srv.URL}
 
+		ctx := context.Background()
+
 		// send all the partial exits
 		for _, exit := range exits {
-			require.NoError(t, cl.PostPartialExit(lockHash, exit))
+			require.NoError(t, cl.PostPartialExit(ctx, lockHash, "token", exit))
 		}
 
 		// get full exit
-		fullExit, err := cl.GetFullExit(lock.Validators[0].PublicKeyHex())
+		fullExit, err := cl.GetFullExit(ctx, lock.Validators[0].PublicKeyHex(), "token")
 		require.NoError(t, err)
 
 		valPubk, err := lock.Validators[0].PublicKey()

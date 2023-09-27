@@ -138,10 +138,12 @@ func Test_RunFlow(t *testing.T) {
 
 	eg := errgroup.Group{}
 
+	ctx := context.Background()
+
 	for opIdx := 0; opIdx < operatorAmt; opIdx++ {
 		opIdx := opIdx
 		eg.Go(func() error {
-			return app.Run(context.Background(), runConfForIdx(opIdx))
+			return app.Run(ctx, runConfForIdx(opIdx))
 		})
 	}
 
