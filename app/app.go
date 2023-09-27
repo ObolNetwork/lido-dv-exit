@@ -214,8 +214,9 @@ func postPartialExit(ctx context.Context, oApi obolapi.Client, obolAPIAuthToken 
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
+	lockHash := "0x" + hex.EncodeToString(mutationHash)
 	// we're retrying every second until we succeeed
-	if err := oApi.PostPartialExit(ctx, "0x"+hex.EncodeToString(mutationHash), obolAPIAuthToken, signedExits...); err != nil {
+	if err := oApi.PostPartialExit(ctx, lockHash, obolAPIAuthToken, signedExits...); err != nil {
 		log.Error(ctx, "Cannot post exits to obol api", err)
 		return false
 	}
