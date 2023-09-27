@@ -5,7 +5,6 @@ package app
 import (
 	"context"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -195,7 +194,7 @@ func fetchFullExit(ctx context.Context, oApi obolapi.Client, validatorPubkey, ob
 		return false
 	}
 
-	data, err := json.Marshal(fullExit)
+	data, err := fullExit.SignedExitMessage.MarshalJSON()
 	if err != nil {
 		log.Warn(ctx, "Cannot marshal exit to json", err)
 

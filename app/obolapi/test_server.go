@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"strings"
 	"sync"
-	"testing"
 
 	eth2p0 "github.com/attestantio/go-eth2-client/spec/phase0"
 	"github.com/gorilla/mux"
@@ -214,9 +213,9 @@ func (ts *testServer) partialExitsMatch(newOne ExitBlob) bool {
 	return *last.SignedExitMessage.Message == *newOne.SignedExitMessage.Message
 }
 
-// GenerateTestServer generates a obol API mock test server.
+// MockServer returns a obol API mock test server.
 // It returns a http.Handler to be served over HTTP, and a function to add cluster lock files to its database.
-func GenerateTestServer(_ *testing.T) (http.Handler, func(lock cluster.Lock)) {
+func MockServer() (http.Handler, func(lock cluster.Lock)) {
 	ts := testServer{
 		lock:         sync.Mutex{},
 		partialExits: map[string]PartialExits{},
@@ -233,6 +232,17 @@ func GenerateTestServer(_ *testing.T) (http.Handler, func(lock cluster.Lock)) {
 	router.HandleFunc(fullExitTmpl, ts.HandleFullExit).Methods(http.MethodGet)
 
 	return router, ts.addLockFiles
+}
+
+// Run runs obol api mock on the provided bind port.
+func Run(_ context.Context, bind string, locks []cluster.Lock) error {
+	ms, addLock := MockServer()
+
+	for _, lock := range locks {
+		addLock(lock)
+	}
+
+	return http.ListenAndServe(bind, ms)
 }
 
 func authMiddleware(next http.Handler) http.Handler {

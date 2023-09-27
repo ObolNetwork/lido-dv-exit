@@ -35,7 +35,7 @@ func newRunCmd(root *cobra.Command, conf app.Config, entrypoint func(ctx context
 	cmd.Flags().StringVar(&conf.CharonRuntimeDir, "charon-runtime-dir", "", "Charon directory, containing the validator_keys directory and manifest file or lock file.")
 	cmd.Flags().StringVar(&conf.ObolAPIURL, "obol-api-url", "https://api.obol.tech", "URL pointing to an obol API instance.")
 
-	bindLogFlags(root.Flags(), &conf.Log)
+	bindLogFlags(cmd.Flags(), &conf.Log)
 
 	wrapPreRunE(cmd, func(cmd *cobra.Command, args []string) error {
 		if _, err := url.ParseRequestURI(conf.BeaconNodeURL); err != nil {

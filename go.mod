@@ -4,6 +4,7 @@ go 1.20
 
 require (
 	github.com/attestantio/go-eth2-client v0.18.3
+	github.com/gorilla/handlers v1.5.1
 	github.com/gorilla/mux v1.8.0
 	github.com/libp2p/go-libp2p v0.31.0
 	github.com/obolnetwork/charon v0.17.0
@@ -27,6 +28,7 @@ require (
 	github.com/docker/go-units v0.5.0 // indirect
 	github.com/elastic/gosigar v0.14.2 // indirect
 	github.com/fatih/color v1.13.0 // indirect
+	github.com/felixge/httpsnoop v1.0.3 // indirect
 	github.com/ferranbt/fastssz v0.1.3 // indirect
 	github.com/flynn/noise v1.0.0 // indirect
 	github.com/francoispqt/gojay v1.2.13 // indirect

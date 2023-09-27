@@ -13,6 +13,8 @@ import (
 	"github.com/spf13/pflag"
 
 	"github.com/ObolNetwork/lido-dv-exit/app"
+	"github.com/ObolNetwork/lido-dv-exit/app/bnapi"
+	"github.com/ObolNetwork/lido-dv-exit/app/obolapi"
 )
 
 // Run runs lido-dv-exit.
@@ -25,6 +27,7 @@ func Run(ctx context.Context) error {
 	}
 
 	newRunCmd(root, conf, app.Run)
+	newMockServersCmd(root, bnapi.Run, obolapi.Run)
 	newVersionCmd(root)
 
 	return root.ExecuteContext(ctx)

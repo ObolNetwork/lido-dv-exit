@@ -28,12 +28,12 @@ const exitEpoch = phase0.Epoch(162304)
 func TestAPIFlow(t *testing.T) {
 	kn := 4
 
-	handler, addLockFiles := obolapi.GenerateTestServer(t)
+	handler, addLockFiles := obolapi.MockServer()
 	srv := httptest.NewServer(handler)
 
 	defer srv.Close()
 
-	bnapiHandler := bnapi.MockBeaconNodeForT(t, nil)
+	bnapiHandler := bnapi.MockBeaconNode(nil)
 	bnapiServer := httptest.NewServer(bnapiHandler)
 	defer bnapiServer.Close()
 	mockEth2Cl := eth2Client(t, context.Background(), bnapiServer.URL)
