@@ -156,3 +156,5 @@ coverage.out
 cli-reference.txt
 changelog.md
 lido-dv-exit
+charoncluster
+ejector_node*
