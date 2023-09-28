@@ -3,10 +3,13 @@
 # Run anvil in separate terminal
 # anvil --fork-url https://mainnet.infura.io/v3/$INFURA_KEY
 
-set -e
-set -x
-#################################
+# this script exports in "env":
+#  - simple_dvt_module_id
+#  - operator_id
+#  - exit_bus_oracle_address
 
+set -e
+#################################
 
 # Variables
 curated_module_address=0x55032650b14df07b85bF18A3a3eC8E0Af2e028d5
@@ -22,6 +25,9 @@ lido_address=$(cast call $locator_address "lido()(address)")
 dsm_address=$(cast call $locator_address "depositSecurityModule()(address)")
 withdrawal_queue_address=$(cast call $locator_address "withdrawalQueue()(address)")
 exit_bus_oracle_address=$(cast call $locator_address "validatorsExitBusOracle()(address)")
+
+echo "export exit_bus_oracle_address='$exit_bus_oracle_address'" >> env
+echo "export locator_address='$locator_address'" >> env
 
 deployer_address=0x00000000219ab540356cBB839Cbe05303d7705Fa
 
@@ -47,7 +53,7 @@ new_app_proxy_call="--from $deployer_address $kernel_address newAppProxy(address
 simple_dvt_module_address=$(cast call $new_app_proxy_call)
 
 cast send --unlocked $new_app_proxy_call > /dev/null
-echo "simple dvt module proxy app deployed: $simple_dvt_module_address"
+echo "simple dvt module proxy app deployed: simple_dvt_module_address"
 
 
 #################################
@@ -111,9 +117,9 @@ simple_dvt_module_fee=500
 simple_dvt_treasure_fee=500
 cast send --unlocked --from $voting_address $staking_router_address "addStakingModule(string,address,uint256,uint256,uint256)" $simple_dvt_app_name $simple_dvt_module_address $simple_dvt_target_share $simple_dvt_module_fee $simple_dvt_treasure_fee > /dev/null
 simple_dvt_module_index=$(($(cast call $staking_router_address "getStakingModulesCount()(uint256)")-1))
-simple_dvt_module_id=$(($simple_dvt_module_index+1))
+export simple_dvt_module_id=$(($simple_dvt_module_index+1))
+echo "export simple_dvt_module_id='$simple_dvt_module_id'" >> env
 echo "module connected to the staking router with index $simple_dvt_module_index"
-
 
 #################################
 
@@ -124,7 +130,7 @@ operator_reward_address=$deployer_address
 operator_id=$(cast call --from $voting_address $simple_dvt_module_address "addNodeOperator(string,address)(uint256)" $operator_name $operator_reward_address)
 cast send --unlocked --from $voting_address $simple_dvt_module_address "addNodeOperator(string,address)(uint256)" $operator_name $operator_reward_address > /dev/null
 echo "added new operator with id $operator_id"
-
+echo "export operator_id='$operator_id'" >> env
 
 #################################
 
@@ -132,9 +138,11 @@ echo "submitting validator keys as specified in the VALIDATORS_PUBKEYS env var"
 
 arr=($VALIDATORS_PUBKEYS)
 
+keys_count=${#arr[@]}
+
 for validator_pubkey in ${arr[@]}; do
+  echo "submitting $validator_pubkey"
   # 4. Submit validator key
-  keys_count=1
   pubkey=$validator_pubkey
   signature=0x000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000002
   operator_id=0
@@ -166,80 +174,3 @@ cast send --unlocked --from $deployer_address $lido_address --value 32ether > /d
 deposits_count=1
 cast send --unlocked --from $dsm_address $lido_address "deposit(uint256,uint256,bytes)" $deposits_count $simple_dvt_module_id 0x > /dev/null
 echo "deposited"
-
-#################################
-
-echo "press enter to request validator exit"
-read
-
-for validator_pubkey in ${arr[@]}; do
-  echo "exiting $validator_pubkey"
-  # 6. Request validators to exit
-
-  # 6.1 Rewind time to the next frame of the oracle report to make sure the report has not passed yet
-  current_oracle_state=$(cast call $exit_bus_oracle_address "getProcessingState()((uint256,uint256,bytes32,bool,uint256,uint256,uint256))")
-  current_oracle_state_parsed=(${current_oracle_state//,/ })
-  current_frame_deadline=${current_oracle_state_parsed[1]}
-  next_block_time=$(($current_frame_deadline + 120)) # end of the frame + some time
-  cast rpc evm_setNextBlockTimestamp $next_block_time > /dev/null
-  cast rpc evm_mine > /dev/null
-  current_slot_time=$current_frame_deadline
-  echo "rewound time to the beginning of a new oracle frame"
-
-  # 6.2 Get fast lane oracle members
-  exit_bus_oracle_consensus_address=$(cast call $exit_bus_oracle_address "getConsensusContract()(address)")
-  fast_lane_response=$(cast call $exit_bus_oracle_consensus_address "getFastLaneMembers()(address[],uint256[])")
-  fast_lane_response_array=(${fast_lane_response//\n/ })
-  fast_lane_members_array=${fast_lane_response_array[0]:1:${#fast_lane_response_array[0]}-2}
-  fast_lane_members=(${fast_lane_members_array//,/ })
-  echo "fetched fast lane members"
-
-  # 6.3 Build a report
-  genesis_time=$(cast call $exit_bus_oracle_address "GENESIS_TIME()(uint256)")
-  slot_per_seconds=$(cast call $exit_bus_oracle_address "SECONDS_PER_SLOT()(uint256)")
-
-  report_slot=$((($current_slot_time-$genesis_time) / $slot_per_seconds))
-  consensus_version=$(cast call $exit_bus_oracle_address "getConsensusVersion()(uint256)")
-  requests_count=1
-  data_format=1
-  validator_index=1000000 # some validator index
-
-  numberToBytes() {
-      local num="$1"
-      local size_in_bytes="$2"
-      local hex_num=$(printf '%x' "$num")
-      local padding_length=$((2 * $size_in_bytes))
-      local bytes_padded=$(printf "%0${padding_length}s" $hex_num | tr ' ' '0')
-      echo 0x$bytes_padded
-  }
-
-  consensus_version_bytes=$(numberToBytes $consensus_version 32)
-  report_slot_bytes=$(numberToBytes $report_slot 32)
-  requests_count_bytes=$(numberToBytes $requests_count 32)
-  data_format_bytes=$(numberToBytes $data_format 32)
-
-  module_id_bytes=$(numberToBytes $simple_dvt_module_id 3)
-  operator_id_bytes=$(numberToBytes $operator_id 5)
-  validator_index_bytes=$(numberToBytes $validator_index 8)
-  validator_pubkey_bytes=$(numberToBytes $pubkey 48)
-  data_bytes=$(cast concat-hex $module_id_bytes $operator_id_bytes $validator_index_bytes $validator_pubkey_bytes)
-
-  report="($consensus_version,$report_slot,$requests_count,$data_format,$data_bytes)"
-  report_encoded=$(cast abi-encode "submitReportData((uint256,uint256,uint256,uint256,bytes))" $report)
-  report_hash=$(cast keccak $report_encoded)
-
-  # 6.4 Submit report hashes from fast lane members
-  for fast_lane_member_address in "${fast_lane_members[@]}"
-  do
-      cast rpc anvil_setBalance $fast_lane_member_address 0x100000000000000000 > /dev/null
-      cast send --unlocked --from $fast_lane_member_address $exit_bus_oracle_consensus_address "submitReport(uint256,bytes32,uint256)" $report_slot $report_hash $consensus_version > /dev/null
-      echo "report hash submitted from $fast_lane_member_address"
-  done
-
-  # 6.5 Submit report data
-  first_member_address=${fast_lane_members[0]}
-  contract_version=$(cast call $exit_bus_oracle_address "getContractVersion()(uint256)")
-
-  cast send --unlocked --from $first_member_address $exit_bus_oracle_address "submitReportData((uint256,uint256,uint256,uint256,bytes),uint256)" $report $contract_version > /dev/null
-  echo "report data sent"
-done
