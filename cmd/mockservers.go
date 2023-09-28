@@ -7,7 +7,6 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
-	mathRand "math/rand"
 	"os"
 
 	ethApi "github.com/attestantio/go-eth2-client/api/v1"
@@ -58,7 +57,7 @@ func newMockServersCmd(
 	bindLogFlags(cmd.Flags(), &bcc.Log)
 
 	wrapPreRunE(cmd, func(cmd *cobra.Command, args []string) error {
-		for _, rawVal := range bcc.ValidatorsPubkeys {
+		for idx, rawVal := range bcc.ValidatorsPubkeys {
 			b, err := hex.DecodeString(rawVal[2:])
 			if err != nil {
 				return errors.Wrap(err, "can't decode eth validator pubkeys")
@@ -67,7 +66,7 @@ func newMockServersCmd(
 			valPubk := eth2p0.BLSPubKey(b)
 
 			bcc.Validators[rawVal] = ethApi.Validator{
-				Index:   eth2p0.ValidatorIndex(mathRand.Uint64()),
+				Index:   eth2p0.ValidatorIndex(idx),
 				Balance: 42,
 				Status:  ethApi.ValidatorStateActiveOngoing,
 				Validator: &eth2p0.Validator{
@@ -77,7 +76,7 @@ func newMockServersCmd(
 					Slashed:                    false,
 					ActivationEligibilityEpoch: 42,
 					ActivationEpoch:            42,
-					ExitEpoch:                  42,
+					ExitEpoch:                  18446744073709551615,
 					WithdrawableEpoch:          42,
 				},
 			}
