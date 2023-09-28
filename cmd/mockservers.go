@@ -66,7 +66,7 @@ func newMockServersCmd(
 			valPubk := eth2p0.BLSPubKey(b)
 
 			bcc.Validators[rawVal] = ethApi.Validator{
-				Index:   eth2p0.ValidatorIndex(idx),
+				Index:   eth2p0.ValidatorIndex(idx + 1),
 				Balance: 42,
 				Status:  ethApi.ValidatorStateActiveOngoing,
 				Validator: &eth2p0.Validator{
