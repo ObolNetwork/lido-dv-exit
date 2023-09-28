@@ -35,7 +35,7 @@ import (
 	"github.com/ObolNetwork/lido-dv-exit/app/obolapi"
 )
 
-const exitEpoch = phase0.Epoch(162304)
+const exitEpoch = phase0.Epoch(194048)
 
 func Test_RunFlow(t *testing.T) {
 	valAmt := 4
@@ -133,6 +133,7 @@ func Test_RunFlow(t *testing.T) {
 			EjectorExitPath:  filepath.Join(ejectorDir, opId),
 			CharonRuntimeDir: filepath.Join(baseDir, opId),
 			ObolAPIURL:       oapiServer.URL,
+			ExitEpoch:        194048,
 		}
 	}
 

@@ -39,6 +39,8 @@ type Config struct {
 	// TODO: check that the directory exists, keystore.LoadManifest will check the format is appropriate.
 	CharonRuntimeDir string
 
+	ExitEpoch uint64
+
 	ObolAPIURL string
 }
 
@@ -120,7 +122,7 @@ func Run(ctx context.Context, config Config) error {
 			}
 
 			// sign exit
-			exit, err := signExit(ctx, bnClient, valIndex, valKeyShare.Share)
+			exit, err := signExit(ctx, bnClient, valIndex, valKeyShare.Share, eth2p0.Epoch(config.ExitEpoch))
 			if err != nil {
 				log.Error(ctx, "Cannot sign exit", err)
 				continue
@@ -228,11 +230,9 @@ func shouldProcessValidator(v *ethApi.Validator) bool {
 	return v.Status == ethApi.ValidatorStateActiveOngoing
 }
 
-const exitEpoch = eth2p0.Epoch(162304) // TODO(gsora): figure this out
-
 // signExit signs a voluntary exit message for valIdx with the given keyShare.
 // Adapted from charon.
-func signExit(ctx context.Context, eth2Cl eth2wrap.Client, valIdx eth2p0.ValidatorIndex, keyShare tbls.PrivateKey) (eth2p0.SignedVoluntaryExit, error) {
+func signExit(ctx context.Context, eth2Cl eth2wrap.Client, valIdx eth2p0.ValidatorIndex, keyShare tbls.PrivateKey, exitEpoch eth2p0.Epoch) (eth2p0.SignedVoluntaryExit, error) {
 	exit := &eth2p0.VoluntaryExit{
 		Epoch:          exitEpoch,
 		ValidatorIndex: valIdx,
