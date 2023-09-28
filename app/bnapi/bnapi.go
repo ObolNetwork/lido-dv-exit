@@ -315,6 +315,10 @@ func MockBeaconNode(validators map[string]ethApi.Validator) http.Handler {
 		}{})
 	}))
 
+	router.Handle("/eth/v1/beacon/pool/voluntary_exits", logHandler(func(writer http.ResponseWriter, request *http.Request) {
+		writer.WriteHeader(http.StatusOK)
+	}))
+
 	router.Handle("/eth/v1/beacon/states/{state_id}/validators", logHandler(MockValidatorAPI(validators, false)))
 	router.Handle("/eth/v1/beacon/states/{state_id}/validators/{valId}", logHandler(MockValidatorAPI(validators, true)))
 
