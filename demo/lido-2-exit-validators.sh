@@ -79,8 +79,7 @@ for pubkey in ${arr[@]}; do
   module_id_bytes=$(numberToBytes $simple_dvt_module_id 3)
   operator_id_bytes=$(numberToBytes $operator_id 5)
   validator_index_bytes=$(numberToBytes $validator_index 8)
-  validator_pubkey_bytes=$(numberToBytes $pubkey 48)
-  data_bytes=$(cast concat-hex $module_id_bytes $operator_id_bytes $validator_index_bytes $validator_pubkey_bytes)
+  data_bytes=$(cast concat-hex $module_id_bytes $operator_id_bytes $validator_index_bytes $pubkey)
 
   report="($consensus_version,$report_slot,$requests_count,$data_format,$data_bytes)"
   report_encoded=$(cast abi-encode "submitReportData((uint256,uint256,uint256,uint256,bytes))" $report)
