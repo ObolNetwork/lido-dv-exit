@@ -10,6 +10,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -81,117 +82,7 @@ func Run(_ context.Context, validators map[string]ethApi.Validator, bindAddr str
 	return http.ListenAndServe(bindAddr, hf)
 }
 
-// MockValidatorAPI returns a http.HandlerFunc that simulates a beacon node API for the
-// validator state endpoint.
-func MockValidatorAPI(validators map[string]ethApi.Validator, workaroundLido bool) http.HandlerFunc {
-	type retContainer struct {
-		Data []*ethApi.Validator `json:"data"`
-	}
-
-	return func(writer http.ResponseWriter, request *http.Request) {
-		vars := mux.Vars(request)
-
-		var valIDs []string
-		if val, ok := vars["valId"]; ok {
-			valIDs = append(valIDs, val)
-		} else {
-			valIDs = strings.Split(request.URL.Query().Get("id"), ",")
-		}
-
-		rawStateID := vars["state_id"]
-
-		stateID := stringToStateID(rawStateID)
-
-		if stateID == StateIDUnknown {
-			errBytes, err := json.Marshal(Error{
-				Code:    http.StatusBadRequest,
-				Message: fmt.Sprintf("Invalid state ID: %s", rawStateID),
-			})
-
-			if err != nil {
-				panic(err) // fine here, it's a test
-			}
-
-			writer.WriteHeader(http.StatusBadRequest)
-			_, _ = writer.Write(errBytes)
-			return
-		}
-
-		var ret any
-
-		if !workaroundLido {
-			var container retContainer
-
-			for _, valID := range valIDs {
-				valStatus, ok := validators[valID]
-
-				if !ok {
-					errBytes, err := json.Marshal(Error{
-						Code:    http.StatusNotFound,
-						Message: "Validator not found",
-					})
-
-					if err != nil {
-						panic(err) // fine here, it's a test
-					}
-
-					writer.WriteHeader(http.StatusNotFound)
-					_, _ = writer.Write(errBytes)
-					return
-				}
-
-				container.Data = append(container.Data, &valStatus)
-			}
-
-			ret = container
-		} else {
-			type container struct {
-				Data *ethApi.Validator `json:"data"`
-			}
-
-			var c container
-
-			for _, valID := range valIDs {
-				valStatus, ok := validators[valID]
-
-				if !ok {
-					errBytes, err := json.Marshal(Error{
-						Code:    http.StatusNotFound,
-						Message: "Validator not found",
-					})
-
-					if err != nil {
-						panic(err) // fine here, it's a test
-					}
-
-					writer.WriteHeader(http.StatusNotFound)
-					_, _ = writer.Write(errBytes)
-					return
-				}
-
-				c.Data = &valStatus
-			}
-
-			ret = c
-		}
-
-		if err := json.NewEncoder(writer).Encode(ret); err != nil {
-			errBytes, err := json.Marshal(Error{
-				Code:    http.StatusInternalServerError,
-				Message: "Internal server error",
-			})
-
-			if err != nil {
-				panic(err) // fine here, it's a test
-			}
-
-			writer.WriteHeader(http.StatusInternalServerError)
-			_, _ = writer.Write(errBytes)
-			return
-		}
-	}
-}
-
+// MockBeaconNode returns a beacon node http.Handler mock with the provided validator map.
 func MockBeaconNode(validators map[string]ethApi.Validator) http.Handler {
 	router := mux.NewRouter()
 
@@ -315,12 +206,169 @@ func MockBeaconNode(validators map[string]ethApi.Validator) http.Handler {
 		}{})
 	}))
 
-	router.Handle("/eth/v1/beacon/pool/voluntary_exits", logHandler(func(writer http.ResponseWriter, request *http.Request) {
-		writer.WriteHeader(http.StatusOK)
-	}))
+	vsh := validatorStateHandler{
+		lock:       sync.Mutex{},
+		validators: validators,
+	}
 
-	router.Handle("/eth/v1/beacon/states/{state_id}/validators", logHandler(MockValidatorAPI(validators, false)))
-	router.Handle("/eth/v1/beacon/states/{state_id}/validators/{valId}", logHandler(MockValidatorAPI(validators, true)))
+	router.Handle("/eth/v1/beacon/pool/voluntary_exits", logHandler(vsh.exitValidator(&slot)))
+
+	router.Handle("/eth/v1/beacon/states/{state_id}/validators", logHandler(vsh.getValidator(false)))
+	router.Handle("/eth/v1/beacon/states/{state_id}/validators/{valId}", logHandler(vsh.getValidator(true)))
 
 	return router
+}
+
+type getValidatorContainer struct {
+	Data []*ethApi.Validator `json:"data"`
+}
+
+type validatorStateHandler struct {
+	lock       sync.Mutex
+	validators map[string]ethApi.Validator
+}
+
+func (vsh *validatorStateHandler) exitValidator(slotCounter *atomic.Uint64) http.HandlerFunc {
+	return func(writer http.ResponseWriter, request *http.Request) {
+		vsh.lock.Lock()
+		defer vsh.lock.Unlock()
+
+		var exitMsg phase0.SignedVoluntaryExit
+
+		if err := json.NewDecoder(request.Body).Decode(&exitMsg); err != nil {
+			errBytes, err := json.Marshal(Error{
+				Code:    http.StatusBadRequest,
+				Message: "Bad Request",
+			})
+
+			if err != nil {
+				writer.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+
+			writer.WriteHeader(http.StatusBadRequest)
+			_, _ = writer.Write(errBytes)
+		}
+
+		validator, ok := vsh.validators[exitMsg.Signature.String()]
+		if !ok {
+			writer.WriteHeader(http.StatusNotFound)
+			return
+		}
+
+		validator.Validator.ExitEpoch = phase0.Epoch(slotCounter.Load() + 10000) // exit in 10000 slots
+
+		validator.Status = ethApi.ValidatorStateActiveExiting
+
+		vsh.validators[exitMsg.Signature.String()] = validator
+
+		writer.WriteHeader(http.StatusOK)
+	}
+}
+
+func (vsh *validatorStateHandler) getValidator(lidoWorkaround bool) http.HandlerFunc {
+	return func(writer http.ResponseWriter, request *http.Request) {
+		vsh.lock.Lock()
+		defer vsh.lock.Unlock()
+
+		vars := mux.Vars(request)
+
+		var valIDs []string
+		if val, ok := vars["valId"]; ok {
+			valIDs = append(valIDs, val)
+		} else {
+			valIDs = strings.Split(request.URL.Query().Get("id"), ",")
+		}
+
+		rawStateID := vars["state_id"]
+
+		stateID := stringToStateID(rawStateID)
+
+		if stateID == StateIDUnknown {
+			errBytes, err := json.Marshal(Error{
+				Code:    http.StatusBadRequest,
+				Message: fmt.Sprintf("Invalid state ID: %s", rawStateID),
+			})
+
+			if err != nil {
+				writer.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+
+			writer.WriteHeader(http.StatusBadRequest)
+			_, _ = writer.Write(errBytes)
+			return
+		}
+
+		var ret any
+
+		if !lidoWorkaround {
+			var container getValidatorContainer
+
+			for _, valID := range valIDs {
+				valStatus, ok := vsh.validators[valID]
+
+				if !ok {
+					errBytes, err := json.Marshal(Error{
+						Code:    http.StatusNotFound,
+						Message: "Validator not found",
+					})
+
+					if err != nil {
+						writer.WriteHeader(http.StatusInternalServerError)
+						return
+					}
+
+					writer.WriteHeader(http.StatusNotFound)
+					_, _ = writer.Write(errBytes)
+					return
+				}
+
+				container.Data = append(container.Data, &valStatus)
+			}
+
+			ret = container
+		} else {
+			type container struct {
+				Data *ethApi.Validator `json:"data"`
+			}
+
+			var c container
+
+			for _, valID := range valIDs {
+				valStatus, ok := vsh.validators[valID]
+
+				if !ok {
+					errBytes, err := json.Marshal(Error{
+						Code:    http.StatusNotFound,
+						Message: "Validator not found",
+					})
+
+					if err != nil {
+						writer.WriteHeader(http.StatusInternalServerError)
+						return
+					}
+
+					writer.WriteHeader(http.StatusNotFound)
+					_, _ = writer.Write(errBytes)
+					return
+				}
+
+				c.Data = &valStatus
+			}
+
+			ret = c
+		}
+
+		if err := json.NewEncoder(writer).Encode(ret); err != nil {
+			errBytes, _ := json.Marshal(Error{ // ignoring error here since we'll write 500 regardless
+				Code:    http.StatusInternalServerError,
+				Message: "Internal server error",
+			})
+
+			writer.WriteHeader(http.StatusInternalServerError)
+			_, _ = writer.Write(errBytes)
+			return
+		}
+	}
 }
