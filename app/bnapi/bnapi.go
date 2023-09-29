@@ -219,8 +219,12 @@ func MockBeaconNode(validators map[string]ethApi.Validator) http.Handler {
 	return router
 }
 
-type getValidatorContainer struct {
+type getValidatorsResponse struct {
 	Data []*ethApi.Validator `json:"data"`
+}
+
+type getValidatorResponse struct {
+	Data *ethApi.Validator `json:"data"`
 }
 
 type validatorStateHandler struct {
@@ -250,9 +254,10 @@ func (vsh *validatorStateHandler) exitValidator(slotCounter *atomic.Uint64) http
 			_, _ = writer.Write(errBytes)
 		}
 
-		validator, ok := vsh.validators[exitMsg.Signature.String()]
+		vIdxStr := strconv.FormatUint(uint64(exitMsg.Message.ValidatorIndex), 10)
+		validator, ok := vsh.validators[vIdxStr]
 		if !ok {
-			writer.WriteHeader(http.StatusNotFound)
+			validatorNotFound(writer)
 			return
 		}
 
@@ -260,13 +265,13 @@ func (vsh *validatorStateHandler) exitValidator(slotCounter *atomic.Uint64) http
 
 		validator.Status = ethApi.ValidatorStateActiveExiting
 
-		vsh.validators[exitMsg.Signature.String()] = validator
+		vsh.validators[vIdxStr] = validator
 
 		writer.WriteHeader(http.StatusOK)
 	}
 }
 
-func (vsh *validatorStateHandler) getValidator(lidoWorkaround bool) http.HandlerFunc {
+func (vsh *validatorStateHandler) getValidator(singleValidatorQuery bool) http.HandlerFunc {
 	return func(writer http.ResponseWriter, request *http.Request) {
 		vsh.lock.Lock()
 		defer vsh.lock.Unlock()
@@ -274,10 +279,21 @@ func (vsh *validatorStateHandler) getValidator(lidoWorkaround bool) http.Handler
 		vars := mux.Vars(request)
 
 		var valIDs []string
-		if val, ok := vars["valId"]; ok {
+
+		if singleValidatorQuery {
+			val, ok := vars["valId"]
+			if !ok {
+				validatorNotFound(writer)
+				return
+			}
+
 			valIDs = append(valIDs, val)
 		} else {
 			valIDs = strings.Split(request.URL.Query().Get("id"), ",")
+			if len(valIDs) == 0 {
+				validatorNotFound(writer)
+				return
+			}
 		}
 
 		rawStateID := vars["state_id"]
@@ -302,25 +318,14 @@ func (vsh *validatorStateHandler) getValidator(lidoWorkaround bool) http.Handler
 
 		var ret any
 
-		if !lidoWorkaround {
-			var container getValidatorContainer
+		if !singleValidatorQuery {
+			var container getValidatorsResponse
 
 			for _, valID := range valIDs {
 				valStatus, ok := vsh.validators[valID]
 
 				if !ok {
-					errBytes, err := json.Marshal(Error{
-						Code:    http.StatusNotFound,
-						Message: "Validator not found",
-					})
-
-					if err != nil {
-						writer.WriteHeader(http.StatusInternalServerError)
-						return
-					}
-
-					writer.WriteHeader(http.StatusNotFound)
-					_, _ = writer.Write(errBytes)
+					validatorNotFound(writer)
 					return
 				}
 
@@ -329,33 +334,16 @@ func (vsh *validatorStateHandler) getValidator(lidoWorkaround bool) http.Handler
 
 			ret = container
 		} else {
-			type container struct {
-				Data *ethApi.Validator `json:"data"`
+			var c getValidatorResponse
+
+			valStatus, ok := vsh.validators[valIDs[0]] // guaranteed by the router to have at least one element
+
+			if !ok {
+				validatorNotFound(writer)
+				return
 			}
 
-			var c container
-
-			for _, valID := range valIDs {
-				valStatus, ok := vsh.validators[valID]
-
-				if !ok {
-					errBytes, err := json.Marshal(Error{
-						Code:    http.StatusNotFound,
-						Message: "Validator not found",
-					})
-
-					if err != nil {
-						writer.WriteHeader(http.StatusInternalServerError)
-						return
-					}
-
-					writer.WriteHeader(http.StatusNotFound)
-					_, _ = writer.Write(errBytes)
-					return
-				}
-
-				c.Data = &valStatus
-			}
+			c.Data = &valStatus
 
 			ret = c
 		}
@@ -371,4 +359,19 @@ func (vsh *validatorStateHandler) getValidator(lidoWorkaround bool) http.Handler
 			return
 		}
 	}
+}
+
+func validatorNotFound(writer http.ResponseWriter) {
+	errBytes, err := json.Marshal(Error{
+		Code:    http.StatusNotFound,
+		Message: "Validator not found",
+	})
+
+	if err != nil {
+		writer.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	writer.WriteHeader(http.StatusNotFound)
+	_, _ = writer.Write(errBytes)
 }
