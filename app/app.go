@@ -20,6 +20,7 @@ import (
 	"github.com/obolnetwork/charon/app/z"
 	"github.com/obolnetwork/charon/eth2util/signing"
 	"github.com/obolnetwork/charon/tbls"
+	"github.com/obolnetwork/charon/tbls/tblsconv"
 
 	"github.com/ObolNetwork/lido-dv-exit/app/bnapi"
 	"github.com/ObolNetwork/lido-dv-exit/app/keystore"
@@ -155,7 +156,7 @@ func Run(ctx context.Context, config Config) error {
 		exitFSPath := filepath.Join(config.EjectorExitPath, fmt.Sprintf("validator-exit-%s.json", validatorPubkey))
 
 		for range tick.C {
-			if fetchFullExit(ctx, oApi, validatorPubkey, obolAPIAuthToken, exitFSPath) {
+			if fetchFullExit(ctx, bnClient, oApi, validatorPubkey, obolAPIAuthToken, exitFSPath) {
 				break
 			}
 		}
@@ -182,7 +183,7 @@ func Run(ctx context.Context, config Config) error {
 
 // fetchFullExit returns true if a full exit was received from the Obol API, and was written in exitFSPath.
 // Each HTTP request has a 10 seconds timeout.
-func fetchFullExit(ctx context.Context, oApi obolapi.Client, validatorPubkey, obolAPIAuthToken, exitFSPath string) bool {
+func fetchFullExit(ctx context.Context, eth2Cl eth2wrap.Client, oApi obolapi.Client, validatorPubkey, obolAPIAuthToken, exitFSPath string) bool {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
@@ -199,6 +200,42 @@ func fetchFullExit(ctx context.Context, oApi obolapi.Client, validatorPubkey, ob
 	data, err := fullExit.SignedExitMessage.MarshalJSON()
 	if err != nil {
 		log.Warn(ctx, "Cannot marshal exit to json", err)
+
+		return false
+	}
+
+	// parse validator public key
+	rawPkBytes, err := hex.DecodeString(validatorPubkey[2:])
+	if err != nil {
+		log.Error(ctx, "Cannot decode validator public key", err)
+
+		return false
+	}
+
+	pubkey, err := tblsconv.PubkeyFromBytes(rawPkBytes)
+	if err != nil {
+		log.Error(ctx, "Cannot convert public key to tbls type", err)
+
+		return false
+	}
+
+	// parse signature
+	signature, err := tblsconv.SignatureFromBytes(fullExit.SignedExitMessage.Signature[:])
+	if err != nil {
+		log.Error(ctx, "Cannot convert public key to tbls type", err)
+
+		return false
+	}
+
+	exitHtr, err := rootForExit(ctx, *fullExit.SignedExitMessage.Message, eth2Cl, fullExit.SignedExitMessage.Message.Epoch)
+	if err != nil {
+		log.Error(ctx, "Cannot calculate hash tree root for exit message for verification", err)
+
+		return false
+	}
+
+	if err := tbls.Verify(pubkey, exitHtr[:], signature); err != nil {
+		log.Error(ctx, "Exit message signature not verified", err)
 
 		return false
 	}
@@ -238,19 +275,9 @@ func signExit(ctx context.Context, eth2Cl eth2wrap.Client, valIdx eth2p0.Validat
 		ValidatorIndex: valIdx,
 	}
 
-	sigRoot, err := exit.HashTreeRoot()
+	sigData, err := rootForExit(ctx, *exit, eth2Cl, exitEpoch)
 	if err != nil {
 		return eth2p0.SignedVoluntaryExit{}, errors.Wrap(err, "exit hash tree root")
-	}
-
-	domain, err := signing.GetDomain(ctx, eth2Cl, signing.DomainExit, exitEpoch)
-	if err != nil {
-		return eth2p0.SignedVoluntaryExit{}, errors.Wrap(err, "get domain")
-	}
-
-	sigData, err := (&eth2p0.SigningData{ObjectRoot: sigRoot, Domain: domain}).HashTreeRoot()
-	if err != nil {
-		return eth2p0.SignedVoluntaryExit{}, errors.Wrap(err, "signing data hash tree root")
 	}
 
 	sig, err := tbls.Sign(keyShare, sigData[:])
@@ -262,6 +289,26 @@ func signExit(ctx context.Context, eth2Cl eth2wrap.Client, valIdx eth2p0.Validat
 		Message:   exit,
 		Signature: eth2p0.BLSSignature(sig),
 	}, nil
+}
+
+// rootForExit returns the hash tree root for the given exit message, at the given exit epoch.
+func rootForExit(ctx context.Context, exit eth2p0.VoluntaryExit, eth2Cl eth2wrap.Client, exitEpoch eth2p0.Epoch) ([32]byte, error) {
+	sigRoot, err := exit.HashTreeRoot()
+	if err != nil {
+		return [32]byte{}, errors.Wrap(err, "exit hash tree root")
+	}
+
+	domain, err := signing.GetDomain(ctx, eth2Cl, signing.DomainExit, exitEpoch)
+	if err != nil {
+		return [32]byte{}, errors.Wrap(err, "get domain")
+	}
+
+	sigData, err := (&eth2p0.SigningData{ObjectRoot: sigRoot, Domain: domain}).HashTreeRoot()
+	if err != nil {
+		return [32]byte{}, errors.Wrap(err, "signing data hash tree root")
+	}
+
+	return sigData, nil
 }
 
 // eth2Client initializes an eth2 beacon node API client.
