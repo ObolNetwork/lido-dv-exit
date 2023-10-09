@@ -4,6 +4,12 @@ set -e
 
 function join_by { local IFS="$1"; shift; echo "$*"; }
 
+rm -f lido-dv-exit
+
+echo "building latest binary..."
+
+go build ./..
+
 rm -rf charoncluster
 rm -f env
 
@@ -43,12 +49,11 @@ function clean_up {
 trap clean_up SIGHUP SIGINT SIGTERM
 
 echo "starting lido-dv-exit mockservers"
-../lido-dv-exit mockservers --validators $(join_by "," $raw_validators) --lockfile-path $cluster_lock_path > /dev/null 2>&1 &
+./lido-dv-exit mockservers --validators $(join_by "," $raw_validators) --lockfile-path $cluster_lock_path > /dev/null 2>&1 &
 pids+=($!)
 
-
 echo "starting anvil"
-anvil --fork-url https://mainnet.infura.io/v3/2c9aded0297647a3b0d408e0f4749aaf -b 1 > /dev/null 2>&1 &
+anvil --fork-url https://mainnet.infura.io/v3/06b9a4142199435ebe083b50a3545d52 > /dev/null 2>&1 &
 pids+=($!)
 
 sleep 2
@@ -69,13 +74,19 @@ done
 echo "starting lido-dv-exit signature aggregation process"
 
 for i in {0..3} ; do
-  ../lido-dv-exit run --beacon-node-url http://localhost:9999 --charon-runtime-dir charoncluster/node$i --ejector-exit-path ejector_node$i --obol-api-url http://localhost:9998 &
+  ./lido-dv-exit run \
+    --beacon-node-url http://localhost:9999 \
+    --charon-runtime-dir charoncluster/node$i \
+    --ejector-exit-path ejector_node$i \
+    --obol-api-url https://0152-2a01-9700-1529-b500-fc8c-5aed-65c6-a483.ngrok.io &
   pids+=($!)
 done
 
+echo "sleeping 15s before starting ejector containers"
+
 sleep 15
 
-echo "sleeping 15s before starting ejector containers"
+      #-e DISABLE_SECURITY_DONT_USE_IN_PRODUCTION=true \
 
 for i in {0..3} ; do
     docker run --rm -it --quiet -d \
@@ -85,13 +96,12 @@ for i in {0..3} ; do
       -e LOCATOR_ADDRESS=$locator_address \
       -e STAKING_MODULE_ID=$simple_dvt_module_id \
       -e OPERATOR_ID=$operator_id \
-      -e ORACLE_ADDRESSES_ALLOWLIST="[\"$exit_bus_oracle_address\"]" \
+      -e ORACLE_ADDRESSES_ALLOWLIST="[\"0x442af784a788a5bd6f42a01ebe9f287a871243fb\",\"$exit_bus_oracle_address\"]" \
       -e MESSAGES_LOCATION=/exitmessages \
-      -e DRY_RUN=true \
       -e LOGGER_LEVEL=debug \
-      -e JOB_INTERVAL=10000 \
+      -e JOB_INTERVAL=1000 \
       -e RUN_METRICS=true \
-      -e BLOCKS_LOOP=1000 \
+      -e BLOCKS_LOOP=900 \
       -e DISABLE_SECURITY_DONT_USE_IN_PRODUCTION=true \
       -p 4000$i:8989 \
       -v $PWD/ejector_node$i:/exitmessages \

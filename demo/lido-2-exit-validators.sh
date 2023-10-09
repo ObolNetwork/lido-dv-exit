@@ -102,3 +102,6 @@ for pubkey in ${arr[@]}; do
 
   (( count++ ))
 done
+
+cast rpc evm_setAutomine true
+cast rpc evm_setIntervalMining 1

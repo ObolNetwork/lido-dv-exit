@@ -9,6 +9,7 @@
 #  - exit_bus_oracle_address
 
 set -e
+
 #################################
 
 # Variables
