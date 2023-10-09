@@ -227,7 +227,7 @@ func fetchFullExit(ctx context.Context, eth2Cl eth2wrap.Client, oApi obolapi.Cli
 		return false
 	}
 
-	exitHtr, err := rootForExit(ctx, *fullExit.SignedExitMessage.Message, eth2Cl, fullExit.SignedExitMessage.Message.Epoch)
+	exitRoot, err := rootForExit(ctx, *fullExit.SignedExitMessage.Message, eth2Cl, fullExit.SignedExitMessage.Message.Epoch)
 	if err != nil {
 		log.Error(ctx, "Cannot calculate hash tree root for exit message for verification", err)
 
