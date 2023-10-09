@@ -138,7 +138,9 @@ func (c Client) GetFullExit(ctx context.Context, valPubkey string, authToken str
 		return ExitBlob{}, errors.New("http error", z.Int("status_code", resp.StatusCode))
 	}
 
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	var er FullExitResponse
 	if err := json.NewDecoder(resp.Body).Decode(&er); err != nil {
