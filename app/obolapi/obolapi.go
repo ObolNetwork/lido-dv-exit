@@ -5,15 +5,19 @@ package obolapi
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 
 	eth2p0 "github.com/attestantio/go-eth2-client/spec/phase0"
 	"github.com/obolnetwork/charon/app/errors"
 	"github.com/obolnetwork/charon/app/z"
+	"github.com/obolnetwork/charon/tbls"
+	"github.com/obolnetwork/charon/tbls/tblsconv"
 )
 
 const (
@@ -54,6 +58,15 @@ type ExitBlob struct {
 	ShareIdx          int                        `json:"share_idx,omitempty"`
 }
 
+// FullExitResponse contains all partial signatures, epoch and validator index to construct a full exit message for
+// a validator.
+// Signatures are ordered by share index.
+type FullExitResponse struct {
+	Epoch          string                `json:"epoch"`
+	ValidatorIndex eth2p0.ValidatorIndex `json:"validator_index"`
+	Signatures     []string              `json:"signatures"`
+}
+
 type Client struct {
 	ObolAPIUrl string
 }
@@ -87,7 +100,7 @@ func (c Client) PostPartialExit(ctx context.Context, lockHash string, authToken 
 		return errors.Wrap(err, "http post error")
 	}
 
-	if resp.StatusCode != 200 {
+	if resp.StatusCode != http.StatusCreated {
 		return errors.New("http error", z.Int("status_code", resp.StatusCode))
 	}
 
@@ -118,8 +131,8 @@ func (c Client) GetFullExit(ctx context.Context, valPubkey string, authToken str
 		return ExitBlob{}, errors.Wrap(err, "http get error")
 	}
 
-	if resp.StatusCode != 200 {
-		if resp.StatusCode == 404 {
+	if resp.StatusCode != http.StatusOK {
+		if resp.StatusCode == http.StatusNotFound {
 			return ExitBlob{}, ErrNoExit
 		}
 		return ExitBlob{}, errors.New("http error", z.Int("status_code", resp.StatusCode))
@@ -127,9 +140,51 @@ func (c Client) GetFullExit(ctx context.Context, valPubkey string, authToken str
 
 	defer resp.Body.Close()
 
-	var ret ExitBlob
-	if err := json.NewDecoder(resp.Body).Decode(&ret); err != nil {
+	var er FullExitResponse
+	if err := json.NewDecoder(resp.Body).Decode(&er); err != nil {
 		return ExitBlob{}, errors.Wrap(err, "json unmarshal error")
+	}
+
+	// do aggregation and cache exit
+	rawSignatures := make(map[int]tbls.Signature)
+
+	for sigIdx, sigStr := range er.Signatures {
+		if len(sigStr) < 2 {
+			return ExitBlob{}, errors.New("signature string has invalid size", z.Int("size", len(sigStr)))
+		}
+
+		sigBytes, err := hex.DecodeString(sigStr[2:])
+		if err != nil {
+			return ExitBlob{}, errors.Wrap(err, "partial signature unmarshal")
+		}
+
+		sig, err := tblsconv.SignatureFromBytes(sigBytes)
+		if err != nil {
+			return ExitBlob{}, errors.Wrap(err, "invalid partial signature")
+		}
+
+		rawSignatures[sigIdx+1] = sig
+	}
+
+	fullSig, err := tbls.ThresholdAggregate(rawSignatures)
+	if err != nil {
+		return ExitBlob{}, errors.Wrap(err, "partial signatures threshold aggregate")
+	}
+
+	epochUint64, err := strconv.ParseUint(er.Epoch, 10, 64)
+	if err != nil {
+		return ExitBlob{}, errors.Wrap(err, "epoch parsing")
+	}
+
+	ret := ExitBlob{
+		PublicKey: valPubkey,
+		SignedExitMessage: eth2p0.SignedVoluntaryExit{
+			Message: &eth2p0.VoluntaryExit{
+				Epoch:          eth2p0.Epoch(epochUint64),
+				ValidatorIndex: er.ValidatorIndex,
+			},
+			Signature: eth2p0.BLSSignature(fullSig),
+		},
 	}
 
 	return ret, nil

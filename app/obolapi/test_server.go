@@ -7,16 +7,15 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"net/http"
+	"sort"
+	"strconv"
 	"strings"
 	"sync"
 
-	eth2p0 "github.com/attestantio/go-eth2-client/spec/phase0"
 	"github.com/gorilla/mux"
 	"github.com/obolnetwork/charon/app/errors"
 	"github.com/obolnetwork/charon/app/log"
 	"github.com/obolnetwork/charon/cluster"
-	"github.com/obolnetwork/charon/tbls"
-	"github.com/obolnetwork/charon/tbls/tblsconv"
 )
 
 type contextKey string
@@ -50,9 +49,6 @@ type testServer struct {
 
 	// store the lock file by its lock hash
 	lockFiles map[string]cluster.Lock
-
-	// store the completed exits by the validator pubkey
-	fullExits map[string]ExitBlob
 
 	// store for each validator, a set of tokens which are authorized to retrieve a given full exit message
 	// the token is a base64-encoded string
@@ -112,11 +108,6 @@ func (ts *testServer) HandlePartialExit(writer http.ResponseWriter, request *htt
 			continue
 		}
 
-		// check if there's a full exit already, if yes, continue
-		if _, ok := ts.fullExits[exit.PublicKey]; ok {
-			continue
-		}
-
 		// check that the last partial exit's data is the same as the new one
 		if len(ts.partialExits[exit.PublicKey]) > 0 && !ts.partialExitsMatch(exit) {
 			writeErr(writer, http.StatusBadRequest, "wrong partial exit for the selected validator")
@@ -138,33 +129,7 @@ func (ts *testServer) HandlePartialExit(writer http.ResponseWriter, request *htt
 
 		am[authToken] = true
 
-		if len(ts.partialExits[exit.PublicKey]) == len(lock.Operators) {
-			// do aggregation and cache exit
-			rawSignatures := make(map[int]tbls.Signature)
-
-			for _, pe := range ts.partialExits[exit.PublicKey] {
-				sig, err := tblsconv.SignatureFromBytes(pe.SignedExitMessage.Signature[:])
-				if err != nil {
-					writeErr(writer, http.StatusInternalServerError, "found partial exit with invalid signature bytes")
-					return
-				}
-
-				rawSignatures[pe.ShareIdx] = sig
-			}
-
-			fullSig, err := tbls.ThresholdAggregate(rawSignatures)
-			if err != nil {
-				writeErr(writer, http.StatusInternalServerError, errors.Wrap(err, "could not aggregate full signature").Error())
-				return
-			}
-
-			exit.SignedExitMessage.Signature = eth2p0.BLSSignature(fullSig)
-
-			ts.fullExits[exit.PublicKey] = ExitBlob{
-				PublicKey:         exit.PublicKey,
-				SignedExitMessage: exit.SignedExitMessage,
-			}
-		}
+		writer.WriteHeader(http.StatusCreated)
 	}
 }
 
@@ -193,13 +158,26 @@ func (ts *testServer) HandleFullExit(writer http.ResponseWriter, request *http.R
 		return
 	}
 
-	exit, ok := ts.fullExits[valPubkey]
+	partialExits, ok := ts.partialExits[valPubkey]
 	if !ok {
-		writer.WriteHeader(http.StatusNotFound)
+		writeErr(writer, http.StatusNotFound, "validator not found")
 		return
 	}
 
-	if err := json.NewEncoder(writer).Encode(exit); err != nil {
+	var ret FullExitResponse
+
+	// order partial exits by share index
+	sort.Slice(partialExits, func(i, j int) bool {
+		return partialExits[i].ShareIdx < partialExits[j].ShareIdx
+	})
+
+	for _, pExit := range partialExits {
+		ret.Signatures = append(ret.Signatures, "0x"+hex.EncodeToString(pExit.SignedExitMessage.Signature[:]))
+		ret.Epoch = strconv.FormatUint(uint64(pExit.SignedExitMessage.Message.Epoch), 10)
+		ret.ValidatorIndex = pExit.SignedExitMessage.Message.ValidatorIndex
+	}
+
+	if err := json.NewEncoder(writer).Encode(ret); err != nil {
 		writeErr(writer, http.StatusInternalServerError, errors.Wrap(err, "cannot marshal exit message").Error())
 		return
 	}
@@ -220,7 +198,6 @@ func MockServer() (http.Handler, func(lock cluster.Lock)) {
 		lock:         sync.Mutex{},
 		partialExits: map[string]PartialExits{},
 		lockFiles:    map[string]cluster.Lock{},
-		fullExits:    map[string]ExitBlob{},
 		authTokens:   map[string]map[string]bool{},
 	}
 
