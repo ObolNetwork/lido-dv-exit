@@ -178,7 +178,7 @@ func (c Client) GetFullExit(ctx context.Context, valPubkey string, authToken str
 		return ExitBlob{}, errors.Wrap(err, "epoch parsing")
 	}
 
-	ret := ExitBlob{
+	return ExitBlob{
 		PublicKey: valPubkey,
 		SignedExitMessage: eth2p0.SignedVoluntaryExit{
 			Message: &eth2p0.VoluntaryExit{
@@ -187,7 +187,5 @@ func (c Client) GetFullExit(ctx context.Context, valPubkey string, authToken str
 			},
 			Signature: eth2p0.BLSSignature(fullSig),
 		},
-	}
-
-	return ret, nil
+	}, nil
 }
