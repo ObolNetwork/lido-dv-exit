@@ -18,7 +18,7 @@ import (
 func Test_eth2Client(t *testing.T) {
 	ongoingVal := testutil.RandomEth2PubKey(t)
 
-	r := bnapi.MockBeaconNodeForT(t, map[string]ethApi.Validator{
+	r := bnapi.MockBeaconNode(map[string]ethApi.Validator{
 		ongoingVal.String(): {
 			Index:   42,
 			Balance: 42,

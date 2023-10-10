@@ -3,16 +3,26 @@
 package bnapi
 
 import (
+	"context"
+	_ "embed"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
+	"strconv"
 	"strings"
-	"testing"
+	"sync"
+	"sync/atomic"
+	"time"
 
 	ethApi "github.com/attestantio/go-eth2-client/api/v1"
 	"github.com/attestantio/go-eth2-client/spec/phase0"
+	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
 )
+
+//go:embed mainnet_spec.json
+var mainnetJSONSpec []byte
 
 // Error is the error struct that Beacon Node returns when HTTP status code is not 200.
 type Error struct {
@@ -69,80 +79,54 @@ func stringToStateID(s string) StateID {
 	}
 }
 
-// MockValidatorAPIForT returns a http.HandlerFunc that simulates a beacon node API for the
-// validator state endpoint.
-func MockValidatorAPIForT(_ *testing.T, validators map[string]ethApi.Validator) http.HandlerFunc {
-	type retContainer struct {
-		Data []*ethApi.Validator `json:"data"`
-	}
+// Run runs beacon mock on the provided bind port.
+func Run(_ context.Context, validators map[string]ethApi.Validator, bindAddr string) error {
+	hf := MockBeaconNode(validators)
 
-	return func(writer http.ResponseWriter, request *http.Request) {
-		vars := mux.Vars(request)
-
-		valIDs := strings.Split(request.URL.Query().Get("id"), ",")
-		rawStateID := vars["state_id"]
-
-		stateID := stringToStateID(rawStateID)
-
-		if stateID == StateIDUnknown {
-			errBytes, err := json.Marshal(Error{
-				Code:    http.StatusBadRequest,
-				Message: fmt.Sprintf("Invalid state ID: %s", rawStateID),
-			})
-
-			if err != nil {
-				panic(err) // fine here, it's a test
-			}
-
-			writer.WriteHeader(http.StatusBadRequest)
-			_, _ = writer.Write(errBytes)
-			return
-		}
-
-		var ret retContainer
-
-		for _, valID := range valIDs {
-			valStatus, ok := validators[valID]
-
-			if !ok {
-				errBytes, err := json.Marshal(Error{
-					Code:    http.StatusNotFound,
-					Message: "Validator not found",
-				})
-
-				if err != nil {
-					panic(err) // fine here, it's a test
-				}
-
-				writer.WriteHeader(http.StatusNotFound)
-				_, _ = writer.Write(errBytes)
-				return
-			}
-
-			ret.Data = append(ret.Data, &valStatus)
-		}
-
-		if err := json.NewEncoder(writer).Encode(ret); err != nil {
-			errBytes, err := json.Marshal(Error{
-				Code:    http.StatusInternalServerError,
-				Message: "Internal server error",
-			})
-
-			if err != nil {
-				panic(err) // fine here, it's a test
-			}
-
-			writer.WriteHeader(http.StatusInternalServerError)
-			_, _ = writer.Write(errBytes)
-			return
-		}
-	}
+	return http.ListenAndServe(bindAddr, hf)
 }
 
-func MockBeaconNodeForT(t *testing.T, validators map[string]ethApi.Validator) http.Handler {
+// MockBeaconNode returns a beacon node http.Handler mock with the provided validator map.
+func MockBeaconNode(validators map[string]ethApi.Validator) http.Handler {
 	router := mux.NewRouter()
 
-	router.HandleFunc("/eth/v1/beacon/genesis", func(writer http.ResponseWriter, request *http.Request) {
+	var slot atomic.Uint64
+	slot.Store(7423039)
+
+	go func() {
+		t := time.NewTicker(1 * time.Second)
+
+		for range t.C {
+			slot.Add(1)
+		}
+	}()
+
+	for _, validator := range validators {
+		validators[strconv.FormatUint(uint64(validator.Index), 10)] = validator
+	}
+
+	logHandler := func(h http.HandlerFunc) http.Handler {
+		return handlers.LoggingHandler(os.Stdout, h)
+	}
+
+	router.NotFoundHandler = logHandler(func(writer http.ResponseWriter, request *http.Request) {
+		writer.WriteHeader(http.StatusNotFound)
+	})
+
+	router.Handle("/eth/v1/node/syncing", logHandler(func(writer http.ResponseWriter, request *http.Request) {
+		s := strconv.FormatUint(slot.Load(), 10)
+		data := map[string]any{
+			"data": map[string]any{
+				"head_slot":     s,
+				"sync_distance": "1",
+				"is_syncing":    false,
+				"is_optimistic": false,
+			},
+		}
+		_ = json.NewEncoder(writer).Encode(data)
+	}))
+
+	router.Handle("/eth/v1/beacon/genesis", logHandler(func(writer http.ResponseWriter, request *http.Request) {
 		_ = json.NewEncoder(writer).Encode(struct {
 			Data struct {
 				GenesisTime           string `json:"genesis_time"`
@@ -155,52 +139,241 @@ func MockBeaconNodeForT(t *testing.T, validators map[string]ethApi.Validator) ht
 				GenesisValidatorsRoot string `json:"genesis_validators_root"`
 				GenesisForkVersion    string `json:"genesis_fork_version"`
 			}{
-				GenesisTime:           "1616508000",
-				GenesisValidatorsRoot: "0x043db0d9a83813551ee2f33450d23797757d430911a9320530ad8a0eabc43efb",
-				GenesisForkVersion:    "0x00001020",
+				GenesisTime:           "1606824023",
+				GenesisValidatorsRoot: "0x4b363db94e286120d76eb905340fdd4e54bfe9f06bf33ff6cf5ad27f511bfe95",
+				GenesisForkVersion:    "0x00000000",
 			},
 		})
-	})
+	}))
 
-	router.HandleFunc("/eth/v1/config/spec", func(writer http.ResponseWriter, request *http.Request) {
-		_ = json.NewEncoder(writer).Encode(struct {
-			Data map[string]string `json:"data"`
-		}{
-			Data: map[string]string{
-				"DOMAIN_VOLUNTARY_EXIT": "0x04000000",
-			},
-		})
-	})
+	router.Handle("/eth/v1/config/spec", logHandler(func(writer http.ResponseWriter, request *http.Request) {
+		// Too much to be a responsible human being
+		_, _ = writer.Write(mainnetJSONSpec)
+	}))
 
-	router.HandleFunc("/eth/v1/config/deposit_contract", func(writer http.ResponseWriter, request *http.Request) {
+	router.Handle("/eth/v1/config/deposit_contract", logHandler(func(writer http.ResponseWriter, request *http.Request) {
 		_ = json.NewEncoder(writer).Encode(struct {
 			Data *ethApi.DepositContract `json:"data"`
 		}{})
-	})
+	}))
 
-	router.HandleFunc("/eth/v1/config/fork_schedule", func(writer http.ResponseWriter, request *http.Request) {
+	router.Handle("/eth/v1/config/fork_schedule", logHandler(func(writer http.ResponseWriter, request *http.Request) {
 		_ = json.NewEncoder(writer).Encode(struct {
 			Data []*phase0.Fork `json:"data"`
 		}{
 			Data: []*phase0.Fork{
 				{
-					PreviousVersion: phase0.Version{02, 00, 10, 20},
-					CurrentVersion:  phase0.Version{03, 00, 10, 20},
-					Epoch:           phase0.Epoch(162304),
+					PreviousVersion: phase0.Version{00, 00, 00, 00},
+					CurrentVersion:  phase0.Version{00, 00, 00, 00},
+					Epoch:           phase0.Epoch(0),
+				},
+				{
+					PreviousVersion: phase0.Version{00, 00, 00, 00},
+					CurrentVersion:  phase0.Version{01, 00, 00, 00},
+					Epoch:           phase0.Epoch(74240),
+				},
+				{
+					PreviousVersion: phase0.Version{01, 00, 00, 00},
+					CurrentVersion:  phase0.Version{02, 00, 00, 00},
+					Epoch:           phase0.Epoch(144896),
+				},
+				{
+					PreviousVersion: phase0.Version{02, 00, 00, 00},
+					CurrentVersion:  phase0.Version{03, 00, 00, 00},
+					Epoch:           phase0.Epoch(194048),
 				},
 			},
 		})
-	})
+	}))
 
-	router.HandleFunc("/eth/v1/node/version", func(writer http.ResponseWriter, request *http.Request) {
+	router.Handle("/eth/v1/beacon/states/{state_id}/fork", logHandler(func(writer http.ResponseWriter, request *http.Request) {
+		_ = json.NewEncoder(writer).Encode(struct {
+			Data      *phase0.Fork `json:"data"`
+			Finalized bool         `json:"finalized"`
+		}{
+			Finalized: true,
+			Data: &phase0.Fork{
+				PreviousVersion: phase0.Version{02, 00, 00, 00},
+				CurrentVersion:  phase0.Version{03, 00, 00, 00},
+				Epoch:           phase0.Epoch(194048),
+			},
+		})
+	}))
+
+	router.Handle("/eth/v1/node/version", logHandler(func(writer http.ResponseWriter, request *http.Request) {
 		_ = json.NewEncoder(writer).Encode(struct {
 			Data struct {
 				Version string `json:"version"`
 			} `json:"data"`
 		}{})
-	})
+	}))
 
-	router.HandleFunc("/eth/v1/beacon/states/{state_id}/validators", MockValidatorAPIForT(t, validators))
+	vsh := validatorStateHandler{
+		lock:       sync.Mutex{},
+		validators: validators,
+	}
+
+	router.Handle("/eth/v1/beacon/pool/voluntary_exits", logHandler(vsh.exitValidator(&slot)))
+
+	router.Handle("/eth/v1/beacon/states/{state_id}/validators", logHandler(vsh.getValidator(false)))
+	router.Handle("/eth/v1/beacon/states/{state_id}/validators/{valId}", logHandler(vsh.getValidator(true)))
 
 	return router
+}
+
+type getValidatorsResponse struct {
+	Data []*ethApi.Validator `json:"data"`
+}
+
+type getValidatorResponse struct {
+	Data *ethApi.Validator `json:"data"`
+}
+
+type validatorStateHandler struct {
+	lock       sync.Mutex
+	validators map[string]ethApi.Validator
+}
+
+func (vsh *validatorStateHandler) exitValidator(slotCounter *atomic.Uint64) http.HandlerFunc {
+	return func(writer http.ResponseWriter, request *http.Request) {
+		vsh.lock.Lock()
+		defer vsh.lock.Unlock()
+
+		var exitMsg phase0.SignedVoluntaryExit
+
+		if err := json.NewDecoder(request.Body).Decode(&exitMsg); err != nil {
+			errBytes, err := json.Marshal(Error{
+				Code:    http.StatusBadRequest,
+				Message: "Bad Request",
+			})
+
+			if err != nil {
+				writer.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+
+			writer.WriteHeader(http.StatusBadRequest)
+			_, _ = writer.Write(errBytes)
+		}
+
+		vIdxStr := strconv.FormatUint(uint64(exitMsg.Message.ValidatorIndex), 10)
+		validator, ok := vsh.validators[vIdxStr]
+		if !ok {
+			validatorNotFound(writer)
+			return
+		}
+
+		validator.Validator.ExitEpoch = phase0.Epoch(slotCounter.Load() + 10000) // exit in 10000 slots
+
+		validator.Status = ethApi.ValidatorStateActiveExiting
+
+		vsh.validators[vIdxStr] = validator
+
+		writer.WriteHeader(http.StatusOK)
+	}
+}
+
+func (vsh *validatorStateHandler) getValidator(singleValidatorQuery bool) http.HandlerFunc {
+	return func(writer http.ResponseWriter, request *http.Request) {
+		vsh.lock.Lock()
+		defer vsh.lock.Unlock()
+
+		vars := mux.Vars(request)
+
+		var valIDs []string
+
+		if singleValidatorQuery {
+			val, ok := vars["valId"]
+			if !ok {
+				validatorNotFound(writer)
+				return
+			}
+
+			valIDs = append(valIDs, val)
+		} else {
+			valIDs = strings.Split(request.URL.Query().Get("id"), ",")
+			if len(valIDs) == 0 {
+				validatorNotFound(writer)
+				return
+			}
+		}
+
+		rawStateID := vars["state_id"]
+
+		stateID := stringToStateID(rawStateID)
+
+		if stateID == StateIDUnknown {
+			errBytes, err := json.Marshal(Error{
+				Code:    http.StatusBadRequest,
+				Message: fmt.Sprintf("Invalid state ID: %s", rawStateID),
+			})
+
+			if err != nil {
+				writer.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+
+			writer.WriteHeader(http.StatusBadRequest)
+			_, _ = writer.Write(errBytes)
+			return
+		}
+
+		var ret any
+
+		if !singleValidatorQuery {
+			var container getValidatorsResponse
+
+			for _, valID := range valIDs {
+				valStatus, ok := vsh.validators[valID]
+
+				if !ok {
+					validatorNotFound(writer)
+					return
+				}
+
+				container.Data = append(container.Data, &valStatus)
+			}
+
+			ret = container
+		} else {
+			var c getValidatorResponse
+
+			valStatus, ok := vsh.validators[valIDs[0]] // guaranteed by the router to have at least one element
+
+			if !ok {
+				validatorNotFound(writer)
+				return
+			}
+
+			c.Data = &valStatus
+
+			ret = c
+		}
+
+		if err := json.NewEncoder(writer).Encode(ret); err != nil {
+			errBytes, _ := json.Marshal(Error{ // ignoring error here since we'll write 500 regardless
+				Code:    http.StatusInternalServerError,
+				Message: "Internal server error",
+			})
+
+			writer.WriteHeader(http.StatusInternalServerError)
+			_, _ = writer.Write(errBytes)
+			return
+		}
+	}
+}
+
+func validatorNotFound(writer http.ResponseWriter) {
+	errBytes, err := json.Marshal(Error{
+		Code:    http.StatusNotFound,
+		Message: "Validator not found",
+	})
+
+	if err != nil {
+		writer.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	writer.WriteHeader(http.StatusNotFound)
+	_, _ = writer.Write(errBytes)
 }

@@ -35,7 +35,7 @@ import (
 	"github.com/ObolNetwork/lido-dv-exit/app/obolapi"
 )
 
-const exitEpoch = phase0.Epoch(162304)
+const exitEpoch = phase0.Epoch(194048)
 
 func Test_RunFlow(t *testing.T) {
 	valAmt := 4
@@ -88,7 +88,7 @@ func Test_RunFlow(t *testing.T) {
 
 	// wire test server for obol api
 
-	oapiHandler, oapiAddLock := obolapi.GenerateTestServer(t)
+	oapiHandler, oapiAddLock := obolapi.MockServer()
 	oapiAddLock(lock)
 
 	oapiServer := httptest.NewServer(oapiHandler)
@@ -116,7 +116,7 @@ func Test_RunFlow(t *testing.T) {
 		}
 	}
 
-	bnapiHandler := bnapi.MockBeaconNodeForT(t, mockValidators)
+	bnapiHandler := bnapi.MockBeaconNode(mockValidators)
 	bnapiServer := httptest.NewServer(bnapiHandler)
 	defer bnapiServer.Close()
 
@@ -133,6 +133,7 @@ func Test_RunFlow(t *testing.T) {
 			EjectorExitPath:  filepath.Join(ejectorDir, opId),
 			CharonRuntimeDir: filepath.Join(baseDir, opId),
 			ObolAPIURL:       oapiServer.URL,
+			ExitEpoch:        194048,
 		}
 	}
 
@@ -163,12 +164,10 @@ func Test_RunFlow(t *testing.T) {
 			fc, err := os.ReadFile(eFile)
 			require.NoError(t, err)
 
-			var exit obolapi.ExitBlob
+			var exit phase0.SignedVoluntaryExit
 			require.NoError(t, json.Unmarshal(fc, &exit))
 
-			require.Equal(t, exit.PublicKey, val.PublicKeyHex())
-
-			sigRoot, err := exit.SignedExitMessage.Message.HashTreeRoot()
+			sigRoot, err := exit.Message.HashTreeRoot()
 			require.NoError(t, err)
 
 			domain, err := signing.GetDomain(context.Background(), mockEth2Cl, signing.DomainExit, exitEpoch)
@@ -180,7 +179,7 @@ func Test_RunFlow(t *testing.T) {
 			pubkBytes, err := val.PublicKey()
 			require.NoError(t, err)
 
-			require.NoError(t, tbls.Verify(pubkBytes, sigData[:], tbls.Signature(exit.SignedExitMessage.Signature)))
+			require.NoError(t, tbls.Verify(pubkBytes, sigData[:], tbls.Signature(exit.Signature)))
 		}
 	}
 }
