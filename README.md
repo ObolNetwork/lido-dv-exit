@@ -53,6 +53,10 @@ Flags:
 
 The flags that show default values can be omitted if correct.
 
+Environment variables can be set by prefixing a CLI flag with `LIDODVEXIT`, and replacing all dashes with underscores.
+
+For example, `--beacon-node-url` becomes `LIDODVEXIT_BEACON_NODE_URL`.
+
 ## Running the program
 
 To `run`, one must provide:
