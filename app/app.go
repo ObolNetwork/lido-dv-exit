@@ -227,14 +227,14 @@ func fetchFullExit(ctx context.Context, eth2Cl eth2wrap.Client, oApi obolapi.Cli
 		return false
 	}
 
-	exitRoot, err := rootForExit(ctx, *fullExit.SignedExitMessage.Message, eth2Cl, fullExit.SignedExitMessage.Message.Epoch)
+	exitRoot, err := sigDataForExit(ctx, *fullExit.SignedExitMessage.Message, eth2Cl, fullExit.SignedExitMessage.Message.Epoch)
 	if err != nil {
 		log.Error(ctx, "Cannot calculate hash tree root for exit message for verification", err)
 
 		return false
 	}
 
-	if err := tbls.Verify(pubkey, exitHtr[:], signature); err != nil {
+	if err := tbls.Verify(pubkey, exitRoot[:], signature); err != nil {
 		log.Error(ctx, "Exit message signature not verified", err)
 
 		return false
@@ -275,7 +275,7 @@ func signExit(ctx context.Context, eth2Cl eth2wrap.Client, valIdx eth2p0.Validat
 		ValidatorIndex: valIdx,
 	}
 
-	sigData, err := rootForExit(ctx, *exit, eth2Cl, exitEpoch)
+	sigData, err := sigDataForExit(ctx, *exit, eth2Cl, exitEpoch)
 	if err != nil {
 		return eth2p0.SignedVoluntaryExit{}, errors.Wrap(err, "exit hash tree root")
 	}
@@ -291,8 +291,8 @@ func signExit(ctx context.Context, eth2Cl eth2wrap.Client, valIdx eth2p0.Validat
 	}, nil
 }
 
-// rootForExit returns the hash tree root for the given exit message, at the given exit epoch.
-func rootForExit(ctx context.Context, exit eth2p0.VoluntaryExit, eth2Cl eth2wrap.Client, exitEpoch eth2p0.Epoch) ([32]byte, error) {
+// sigDataForExit returns the hash tree root for the given exit message, at the given exit epoch.
+func sigDataForExit(ctx context.Context, exit eth2p0.VoluntaryExit, eth2Cl eth2wrap.Client, exitEpoch eth2p0.Epoch) ([32]byte, error) {
 	sigRoot, err := exit.HashTreeRoot()
 	if err != nil {
 		return [32]byte{}, errors.Wrap(err, "exit hash tree root")
