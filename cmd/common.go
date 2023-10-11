@@ -109,7 +109,7 @@ func wrapPreRunE(cmd *cobra.Command, fn func(cmd *cobra.Command, args []string) 
 func initializeConfig(cmd *cobra.Command) error {
 	v := viper.New()
 
-	v.SetConfigName(lidoDvExit)
+	v.SetConfigName(lidoDVExit)
 	v.AddConfigPath(".")
 
 	// Attempt to read the config file, gracefully ignoring errors
@@ -123,7 +123,7 @@ func initializeConfig(cmd *cobra.Command) error {
 		}
 	}
 
-	v.SetEnvPrefix(lidoDvExit)
+	v.SetEnvPrefix(lidoDVExit)
 	v.AutomaticEnv()
 	v.SetEnvKeyReplacer(strings.NewReplacer("-", "_"))
 
