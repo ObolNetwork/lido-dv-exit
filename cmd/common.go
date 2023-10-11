@@ -21,7 +21,7 @@ import (
 )
 
 const (
-	lidoDvExit = "lidodvexit"
+	lidoDVExit = "lidodvexit"
 )
 
 // Run runs lido-dv-exit.
