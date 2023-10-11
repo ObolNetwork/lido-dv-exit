@@ -5,7 +5,6 @@ package obolapi
 import (
 	"bytes"
 	"context"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -18,6 +17,8 @@ import (
 	"github.com/obolnetwork/charon/app/z"
 	"github.com/obolnetwork/charon/tbls"
 	"github.com/obolnetwork/charon/tbls/tblsconv"
+
+	"github.com/ObolNetwork/lido-dv-exit/app/util"
 )
 
 const (
@@ -155,7 +156,7 @@ func (c Client) GetFullExit(ctx context.Context, valPubkey string, authToken str
 			return ExitBlob{}, errors.New("signature string has invalid size", z.Int("size", len(sigStr)))
 		}
 
-		sigBytes, err := hex.DecodeString(sigStr[2:])
+		sigBytes, err := util.SignatureToBytes(sigStr)
 		if err != nil {
 			return ExitBlob{}, errors.Wrap(err, "partial signature unmarshal")
 		}
