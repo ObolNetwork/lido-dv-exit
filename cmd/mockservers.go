@@ -15,7 +15,7 @@ import (
 	"github.com/obolnetwork/charon/cluster"
 	"github.com/spf13/cobra"
 	"golang.org/x/sync/errgroup"
-  
+
 	"github.com/ObolNetwork/lido-dv-exit/app/util"
 )
 
