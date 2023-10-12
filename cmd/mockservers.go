@@ -5,7 +5,6 @@ package cmd
 import (
 	"context"
 	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"os"
 
@@ -16,6 +15,8 @@ import (
 	"github.com/obolnetwork/charon/cluster"
 	"github.com/spf13/cobra"
 	"golang.org/x/sync/errgroup"
+  
+	"github.com/ObolNetwork/lido-dv-exit/app/util"
 )
 
 type bmockCliConfig struct {
@@ -58,7 +59,7 @@ func newMockServersCmd(
 
 	wrapPreRunE(cmd, func(cmd *cobra.Command, args []string) error {
 		for idx, rawVal := range bcc.ValidatorsPubkeys {
-			b, err := hex.DecodeString(rawVal[2:])
+			b, err := util.ValidatorPubkeyToBytes(rawVal)
 			if err != nil {
 				return errors.Wrap(err, "can't decode eth validator pubkeys")
 			}

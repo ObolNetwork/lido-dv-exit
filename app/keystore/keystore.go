@@ -5,7 +5,6 @@ package keystore
 import (
 	"crypto/sha256"
 	"encoding/base64"
-	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -21,6 +20,8 @@ import (
 	ckeystore "github.com/obolnetwork/charon/eth2util/keystore"
 	"github.com/obolnetwork/charon/tbls"
 	"github.com/obolnetwork/charon/tbls/tblsconv"
+
+	"github.com/ObolNetwork/lido-dv-exit/app/util"
 )
 
 // KeyShare represents a share in the context of a Charon cluster,
@@ -35,7 +36,7 @@ type ValidatorPubkey string
 
 // Phase0 return vp as a phase0.BLSPubKey key.
 func (vp ValidatorPubkey) Phase0() (phase0.BLSPubKey, error) {
-	rawPubk, err := hex.DecodeString(string(vp[2:]))
+	rawPubk, err := util.ValidatorPubkeyToBytes(string(vp))
 	if err != nil {
 		return phase0.BLSPubKey{}, errors.Wrap(err, "validator pubkey from hex")
 	}

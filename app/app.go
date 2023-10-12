@@ -25,6 +25,7 @@ import (
 	"github.com/ObolNetwork/lido-dv-exit/app/bnapi"
 	"github.com/ObolNetwork/lido-dv-exit/app/keystore"
 	"github.com/ObolNetwork/lido-dv-exit/app/obolapi"
+	"github.com/ObolNetwork/lido-dv-exit/app/util"
 )
 
 // Config is the lido-dv-exit CLI configuration flag value holder.
@@ -205,7 +206,7 @@ func fetchFullExit(ctx context.Context, eth2Cl eth2wrap.Client, oApi obolapi.Cli
 	}
 
 	// parse validator public key
-	rawPkBytes, err := hex.DecodeString(validatorPubkey[2:])
+	rawPkBytes, err := util.ValidatorPubkeyToBytes(validatorPubkey)
 	if err != nil {
 		log.Error(ctx, "Cannot decode validator public key", err)
 

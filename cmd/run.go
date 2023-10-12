@@ -30,10 +30,11 @@ func newRunCmd(root *cobra.Command, conf app.Config, entrypoint func(ctx context
 			return entrypoint(cmd.Context(), conf)
 		},
 	}
-	cmd.Flags().StringVar(&conf.BeaconNodeURL, "beacon-node-url", "", "URL pointing to a running ethereum beacon node.")
-	cmd.Flags().StringVar(&conf.EjectorExitPath, "ejector-exit-path", "", "Filesystem path to store full exit.")
-	cmd.Flags().StringVar(&conf.CharonRuntimeDir, "charon-runtime-dir", "", "Charon directory, containing the validator_keys directory and manifest file or lock file.")
-	cmd.Flags().StringVar(&conf.ObolAPIURL, "obol-api-url", "https://api.obol.tech", "URL pointing to an obol API instance.")
+
+	cmd.Flags().StringVarP(&conf.BeaconNodeURL, "beacon-node-url", "b", "", "URL pointing to a running ethereum beacon node.")
+	cmd.Flags().StringVarP(&conf.EjectorExitPath, "ejector-exit-path", "e", "", "Filesystem path to store full exit.")
+	cmd.Flags().StringVarP(&conf.CharonRuntimeDir, "charon-runtime-dir", "c", "", "Charon directory, containing the validator_keys directory and manifest file or lock file.")
+	cmd.Flags().StringVarP(&conf.ObolAPIURL, "obol-api-url", "o", "https://api.obol.tech", "URL pointing to an obol API instance.")
 	cmd.Flags().Uint64Var(&conf.ExitEpoch, "exit-epoch", 194048, "Epoch to exit validators at.")
 
 	bindLogFlags(cmd.Flags(), &conf.Log)

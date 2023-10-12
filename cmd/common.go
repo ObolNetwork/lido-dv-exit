@@ -4,17 +4,24 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 	"net/url"
 	"strings"
 
+	"github.com/obolnetwork/charon/app/errors"
 	"github.com/obolnetwork/charon/app/log"
 	"github.com/obolnetwork/charon/app/z"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
+	"github.com/spf13/viper"
 
 	"github.com/ObolNetwork/lido-dv-exit/app"
 	"github.com/ObolNetwork/lido-dv-exit/app/bnapi"
 	"github.com/ObolNetwork/lido-dv-exit/app/obolapi"
+)
+
+const (
+	lidoDVExit = "lidodvexit"
 )
 
 // Run runs lido-dv-exit.
@@ -24,6 +31,9 @@ func Run(ctx context.Context) error {
 	root := &cobra.Command{
 		Use:   "lido-exit-dv",
 		Short: "Validator exit tool for Lido",
+		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
+			return initializeConfig(cmd)
+		},
 	}
 
 	newRunCmd(root, conf, app.Run)
@@ -93,4 +103,64 @@ func wrapPreRunE(cmd *cobra.Command, fn func(cmd *cobra.Command, args []string) 
 
 		return nil
 	}
+}
+
+// initializeConfig sets up the general viper config and binds the cobra flags to the viper flags.
+func initializeConfig(cmd *cobra.Command) error {
+	v := viper.New()
+
+	v.SetConfigName(lidoDVExit)
+	v.AddConfigPath(".")
+
+	// Attempt to read the config file, gracefully ignoring errors
+	// caused by a config file not being found. Return an error
+	// if we cannot parse the config file.
+	if err := v.ReadInConfig(); err != nil {
+		// It's okay if there isn't a config file
+		var cfgError viper.ConfigFileNotFoundError
+		if ok := errors.As(err, &cfgError); !ok {
+			return errors.Wrap(err, "read config")
+		}
+	}
+
+	v.SetEnvPrefix(lidoDVExit)
+	v.AutomaticEnv()
+	v.SetEnvKeyReplacer(strings.NewReplacer("-", "_"))
+
+	// Bind the current command's flags to viper
+	return bindFlags(cmd, v)
+}
+
+// bindFlags binds each cobra flag to its associated viper configuration (config file and environment variable).
+func bindFlags(cmd *cobra.Command, v *viper.Viper) error {
+	var lastErr error
+
+	cmd.Flags().VisitAll(func(f *pflag.Flag) {
+		// Cobra provided flags take priority
+		if f.Changed {
+			return
+		}
+
+		// Define all the viper flag names to check
+		viperNames := []string{
+			f.Name,
+			strings.ReplaceAll(f.Name, "_", "."), // TOML uses "." to indicate hierarchy, while we use "_" in this example.
+		}
+
+		for _, name := range viperNames {
+			if !v.IsSet(name) {
+				continue
+			}
+
+			val := v.Get(name)
+			err := cmd.Flags().Set(f.Name, fmt.Sprintf("%v", val))
+			if err != nil {
+				lastErr = err
+			}
+
+			break
+		}
+	})
+
+	return lastErr
 }
