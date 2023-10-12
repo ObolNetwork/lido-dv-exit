@@ -4,7 +4,6 @@ package obolapi_test
 
 import (
 	"context"
-	"encoding/hex"
 	"net/http/httptest"
 	"testing"
 	"time"
@@ -38,7 +37,7 @@ func TestAPIFlow(t *testing.T) {
 	defer bnapiServer.Close()
 	mockEth2Cl := eth2Client(t, context.Background(), bnapiServer.URL)
 
-	lock, _, shares := cluster.NewForT(
+	lock, identityKeys, shares := cluster.NewForT(
 		t,
 		1,
 		kn,
@@ -68,43 +67,44 @@ func TestAPIFlow(t *testing.T) {
 	for idx := 0; idx < len(shares); idx++ {
 		var exits []obolapi.ExitBlob
 
-		for idx, shareSet := range shares[idx] {
+		for _, shareSet := range shares[idx] {
 			signature, err := tbls.Sign(shareSet, sigData[:])
 			require.NoError(t, err)
 
 			exitMsg := exitMsg
 			exitMsg.Signature = phase0.BLSSignature(signature)
 
-			exits = append(exits, obolapi.ExitBlob{
+			exit := obolapi.ExitBlob{
 				PublicKey:         lock.Validators[0].PublicKeyHex(),
 				SignedExitMessage: exitMsg,
-				ShareIdx:          idx + 1,
-			})
-		}
+			}
 
-		lockHash := "0x" + hex.EncodeToString(lock.LockHash)
+			exits = append(exits, exit)
+		}
 
 		cl := obolapi.Client{ObolAPIUrl: srv.URL}
 
 		ctx := context.Background()
 
 		// send all the partial exits
-		for _, exit := range exits {
-			require.NoError(t, cl.PostPartialExit(ctx, lockHash, "token", exit))
+		for idx, exit := range exits {
+			require.NoError(t, cl.PostPartialExit(ctx, lock.LockHash, idx+1, identityKeys[idx], exit), "share index: %d", idx+1)
 		}
 
-		// get full exit
-		fullExit, err := cl.GetFullExit(ctx, lock.Validators[0].PublicKeyHex(), "token")
-		require.NoError(t, err)
+		for idx := range exits {
+			// get full exit
+			fullExit, err := cl.GetFullExit(ctx, lock.Validators[0].PublicKeyHex(), lock.LockHash, idx+1, identityKeys[idx])
+			require.NoError(t, err, "share index: %d", idx+1)
 
-		valPubk, err := lock.Validators[0].PublicKey()
-		require.NoError(t, err)
+			valPubk, err := lock.Validators[0].PublicKey()
+			require.NoError(t, err, "share index: %d", idx+1)
 
-		sig, err := tblsconv.SignatureFromBytes(fullExit.SignedExitMessage.Signature[:])
-		require.NoError(t, err)
+			sig, err := tblsconv.SignatureFromBytes(fullExit.SignedExitMessage.Signature[:])
+			require.NoError(t, err, "share index: %d", idx+1)
 
-		// verify that the aggregated signature works
-		require.NoError(t, tbls.Verify(valPubk, sigData[:], sig))
+			// verify that the aggregated signature works
+			require.NoError(t, tbls.Verify(valPubk, sigData[:], sig), "share index: %d", idx+1)
+		}
 	}
 }
 

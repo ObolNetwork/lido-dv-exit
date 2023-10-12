@@ -5,6 +5,8 @@ package obolapi
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -13,6 +15,8 @@ import (
 	"strings"
 
 	eth2p0 "github.com/attestantio/go-eth2-client/spec/phase0"
+	"github.com/decred/dcrd/dcrec/secp256k1/v4"
+	"github.com/decred/dcrd/dcrec/secp256k1/v4/ecdsa"
 	"github.com/obolnetwork/charon/app/errors"
 	"github.com/obolnetwork/charon/app/z"
 	"github.com/obolnetwork/charon/tbls"
@@ -22,13 +26,17 @@ import (
 )
 
 const (
-	partialExitTmpl = "/exp/partial_exits/{lockhash}"
-	fullExitTmpl    = "/exp/exit/{validator_pubkey}"
-	lockHashPath    = "{lockhash}"
-	valPubkeyPath   = "{validator_pubkey}"
+	lockHashPath     = "{lock_hash}"
+	valPubkeyPath    = "{validator_pubkey}"
+	shareIndexPath   = "{share_index}"
+	fullExitBaseTmpl = "/exp/exit"
+	fullExitEndTmp   = "/" + lockHashPath + "/" + shareIndexPath + "/" + valPubkeyPath
+
+	partialExitTmpl = "/exp/partial_exits/" + lockHashPath
+	fullExitTmpl    = fullExitBaseTmpl + fullExitEndTmp
 )
 
-var ErrNoExit = errors.New("no exit for the given validator puiblic key")
+var ErrNoExit = errors.New("no exit for the given validator public key")
 
 func partialExitURL(lockHash string) string {
 	return strings.NewReplacer(
@@ -37,35 +45,20 @@ func partialExitURL(lockHash string) string {
 	).Replace(partialExitTmpl)
 }
 
-func bearerString(token string) string {
-	return fmt.Sprintf("Bearer %s", token)
+func bearerString(data []byte) string {
+	return fmt.Sprintf("Bearer %s", base64.StdEncoding.EncodeToString(data))
 }
 
 // TODO(gsora): validate public key
-func fullExitURL(valPubkey string) string {
+func fullExitURL(valPubkey, lockHash string, shareIndex int) string {
 	return strings.NewReplacer(
 		valPubkeyPath,
 		valPubkey,
+		lockHashPath,
+		lockHash,
+		shareIndexPath,
+		strconv.Itoa(shareIndex),
 	).Replace(fullExitTmpl)
-}
-
-// PartialExits is an array of ExitMessage that have been signed with a partial key.
-type PartialExits []ExitBlob
-
-// ExitBlob is an exit message alongside its BLS12-381 hex-encoded signature.
-type ExitBlob struct {
-	PublicKey         string                     `json:"public_key,omitempty"`
-	SignedExitMessage eth2p0.SignedVoluntaryExit `json:"signed_exit_message"`
-	ShareIdx          int                        `json:"share_idx,omitempty"`
-}
-
-// FullExitResponse contains all partial signatures, epoch and validator index to construct a full exit message for
-// a validator.
-// Signatures are ordered by share index.
-type FullExitResponse struct {
-	Epoch          string                `json:"epoch"`
-	ValidatorIndex eth2p0.ValidatorIndex `json:"validator_index"`
-	Signatures     []string              `json:"signatures"`
 }
 
 type Client struct {
@@ -73,8 +66,10 @@ type Client struct {
 }
 
 // PostPartialExit POSTs the set of msg's to the Obol API, for a given lock hash.
-func (c Client) PostPartialExit(ctx context.Context, lockHash string, authToken string, msg ...ExitBlob) error {
-	path := partialExitURL(lockHash)
+func (c Client) PostPartialExit(ctx context.Context, lockHash []byte, shareIndex int, identityKey *secp256k1.PrivateKey, exitBlobs ...ExitBlob) error {
+	lockHashStr := "0x" + hex.EncodeToString(lockHash)
+
+	path := partialExitURL(lockHashStr)
 
 	u, err := url.ParseRequestURI(c.ObolAPIUrl)
 	if err != nil {
@@ -83,7 +78,23 @@ func (c Client) PostPartialExit(ctx context.Context, lockHash string, authToken 
 
 	u.Path = path
 
-	data, err := json.Marshal(PartialExits(msg))
+	var msg UnsignedPartialExitRequest
+
+	msg.ShareIdx = shareIndex
+
+	msg.PartialExits = append(msg.PartialExits, exitBlobs...)
+
+	peroot, err := msg.HashTreeRoot()
+	if err != nil {
+		return errors.Wrap(err, "partial exits hash tree root")
+	}
+
+	signature := ecdsa.Sign(identityKey, peroot[:]).Serialize()
+
+	data, err := json.Marshal(PartialExitRequest{
+		UnsignedPartialExitRequest: msg,
+		Signature:                  signature,
+	})
 	if err != nil {
 		return errors.Wrap(err, "json marshal error")
 	}
@@ -92,9 +103,6 @@ func (c Client) PostPartialExit(ctx context.Context, lockHash string, authToken 
 	if err != nil {
 		return errors.Wrap(err, "http new post request")
 	}
-
-	req.Header.Set("Authorization", bearerString(authToken))
-	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -108,9 +116,9 @@ func (c Client) PostPartialExit(ctx context.Context, lockHash string, authToken 
 	return nil
 }
 
-// GetFullExit gets the full exit message for a given validator public key.
-func (c Client) GetFullExit(ctx context.Context, valPubkey string, authToken string) (ExitBlob, error) {
-	path := fullExitURL(valPubkey)
+// GetFullExit gets the full exit message for a given validator public key, lock hash and share index.
+func (c Client) GetFullExit(ctx context.Context, valPubkey string, lockHash []byte, shareIndex int, identityKey *secp256k1.PrivateKey) (ExitBlob, error) {
+	path := fullExitURL(valPubkey, "0x"+hex.EncodeToString(lockHash), shareIndex)
 
 	u, err := url.ParseRequestURI(c.ObolAPIUrl)
 	if err != nil {
@@ -124,7 +132,10 @@ func (c Client) GetFullExit(ctx context.Context, valPubkey string, authToken str
 		return ExitBlob{}, errors.Wrap(err, "http new get request")
 	}
 
-	req.Header.Set("Authorization", bearerString(authToken))
+	// sign the lockHash *bytes* with identity key
+	lockHashSignature := ecdsa.Sign(identityKey, lockHash)
+
+	req.Header.Set("Authorization", bearerString(lockHashSignature.Serialize()))
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := http.DefaultClient.Do(req)
@@ -148,7 +159,7 @@ func (c Client) GetFullExit(ctx context.Context, valPubkey string, authToken str
 		return ExitBlob{}, errors.Wrap(err, "json unmarshal error")
 	}
 
-	// do aggregation and cache exit
+	// do aggregation
 	rawSignatures := make(map[int]tbls.Signature)
 
 	for sigIdx, sigStr := range er.Signatures {

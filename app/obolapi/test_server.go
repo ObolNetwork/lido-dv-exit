@@ -4,6 +4,7 @@ package obolapi
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"net/http"
@@ -12,10 +13,12 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/decred/dcrd/dcrec/secp256k1/v4/ecdsa"
 	"github.com/gorilla/mux"
 	"github.com/obolnetwork/charon/app/errors"
 	"github.com/obolnetwork/charon/app/log"
 	"github.com/obolnetwork/charon/cluster"
+	"github.com/obolnetwork/charon/eth2util/enr"
 )
 
 type contextKey string
@@ -38,6 +41,12 @@ func writeErr(wr http.ResponseWriter, status int, msg string) {
 	_, _ = wr.Write(resp)
 }
 
+// exitBlob represents an Obol API ExitBlob with its share index.
+type exitBlob struct {
+	ExitBlob
+	shareIdx int
+}
+
 // testServer is a mock implementation (but that actually does cryptography) of the Obol API side,
 // which will handle storing and recollecting partial signatures.
 type testServer struct {
@@ -45,14 +54,10 @@ type testServer struct {
 	lock sync.Mutex
 
 	// store the partial exits by the validator pubkey
-	partialExits map[string]PartialExits
+	partialExits map[string][]exitBlob
 
 	// store the lock file by its lock hash
 	lockFiles map[string]cluster.Lock
-
-	// store for each validator, a set of tokens which are authorized to retrieve a given full exit message
-	// the token is a base64-encoded string
-	authTokens map[string]map[string]bool
 }
 
 // addLockFiles adds a set of lock files to ts.
@@ -67,22 +72,16 @@ func (ts *testServer) HandlePartialExit(writer http.ResponseWriter, request *htt
 	ts.lock.Lock()
 	defer ts.lock.Unlock()
 
-	authToken, ok := request.Context().Value(tokenContextKey).(string)
-	if !ok {
-		log.Error(request.Context(), "received context without token, that's impossible!", nil)
-		return
-	}
-
 	vars := mux.Vars(request)
 
-	var data PartialExits
+	var data PartialExitRequest
 
 	if err := json.NewDecoder(request.Body).Decode(&data); err != nil {
 		writeErr(writer, http.StatusBadRequest, "invalid body")
 		return
 	}
 
-	lockHash := vars["lockhash"]
+	lockHash := vars[cleanTmpl(lockHashPath)]
 	if lockHash == "" {
 		writeErr(writer, http.StatusBadRequest, "invalid lock hash")
 		return
@@ -91,9 +90,27 @@ func (ts *testServer) HandlePartialExit(writer http.ResponseWriter, request *htt
 	lock, ok := ts.lockFiles[lockHash]
 	if !ok {
 		writeErr(writer, http.StatusNotFound, "lock not found")
+		return
 	}
 
-	for _, exit := range data {
+	// check that data has been signed with ShareIdx-th identity key
+	if data.ShareIdx == 0 || data.ShareIdx > len(lock.Operators) {
+		writeErr(writer, http.StatusBadRequest, "invalid share index")
+		return
+	}
+
+	signedExitsRoot, err := data.HashTreeRoot()
+	if err != nil {
+		writeErr(writer, http.StatusInternalServerError, "cannot calculate hash tree root for provided signed exits")
+		return
+	}
+
+	if err := verifyIdentitySignature(lock.Operators[data.ShareIdx-1], data.Signature, signedExitsRoot[:]); err != nil {
+		writeErr(writer, http.StatusBadRequest, "cannot verify signature: "+err.Error())
+		return
+	}
+
+	for _, exit := range data.PartialExits {
 		exit := exit
 		valFound := false
 
@@ -119,25 +136,20 @@ func (ts *testServer) HandlePartialExit(writer http.ResponseWriter, request *htt
 			return
 		}
 
-		ts.partialExits[exit.PublicKey] = append(ts.partialExits[exit.PublicKey], exit)
-
-		am, ok := ts.authTokens[exit.PublicKey]
-		if !ok {
-			ts.authTokens[exit.PublicKey] = map[string]bool{}
-			am = ts.authTokens[exit.PublicKey]
-		}
-
-		am[authToken] = true
-
-		writer.WriteHeader(http.StatusCreated)
+		ts.partialExits[exit.PublicKey] = append(ts.partialExits[exit.PublicKey], exitBlob{
+			ExitBlob: exit,
+			shareIdx: data.ShareIdx,
+		})
 	}
+
+	writer.WriteHeader(http.StatusCreated)
 }
 
 func (ts *testServer) HandleFullExit(writer http.ResponseWriter, request *http.Request) {
 	ts.lock.Lock()
 	defer ts.lock.Unlock()
 
-	authToken, ok := request.Context().Value(tokenContextKey).(string)
+	authToken, ok := request.Context().Value(tokenContextKey).([]byte)
 	if !ok {
 		log.Error(request.Context(), "received context without token, that's impossible!", nil)
 		return
@@ -145,16 +157,18 @@ func (ts *testServer) HandleFullExit(writer http.ResponseWriter, request *http.R
 
 	vars := mux.Vars(request)
 
-	valPubkey := vars["validator_pubkey"]
-
-	am, ok := ts.authTokens[valPubkey]
-	if !ok {
-		writeErr(writer, http.StatusUnauthorized, "no validator associated with auth token")
+	valPubkey := vars[cleanTmpl(valPubkeyPath)]
+	lockHash := vars[cleanTmpl(lockHashPath)]
+	shareIndexStr := vars[cleanTmpl(shareIndexPath)]
+	shareIndex, err := strconv.Atoi(shareIndexStr)
+	if err != nil {
+		writeErr(writer, http.StatusBadRequest, "malformed share index")
 		return
 	}
 
-	if _, ok := am[authToken]; !ok {
-		writeErr(writer, http.StatusUnauthorized, "auth token for validator refused")
+	lock, ok := ts.lockFiles[lockHash]
+	if !ok {
+		writeErr(writer, http.StatusNotFound, "lock not found")
 		return
 	}
 
@@ -164,11 +178,27 @@ func (ts *testServer) HandleFullExit(writer http.ResponseWriter, request *http.R
 		return
 	}
 
+	if len(partialExits) < lock.Threshold {
+		writeErr(writer, http.StatusUnauthorized, "not enough partial exits stored")
+		return
+	}
+
+	// check that data has been signed with ShareIdx-th identity key
+	if shareIndex == 0 || shareIndex > len(lock.Operators) {
+		writeErr(writer, http.StatusBadRequest, "invalid share index")
+		return
+	}
+
+	if err := verifyIdentitySignature(lock.Operators[shareIndex-1], authToken, lock.LockHash); err != nil {
+		writeErr(writer, http.StatusBadRequest, "cannot verify signature: "+err.Error())
+		return
+	}
+
 	var ret FullExitResponse
 
 	// order partial exits by share index
 	sort.Slice(partialExits, func(i, j int) bool {
-		return partialExits[i].ShareIdx < partialExits[j].ShareIdx
+		return partialExits[i].shareIdx < partialExits[j].shareIdx
 	})
 
 	for _, pExit := range partialExits {
@@ -191,22 +221,50 @@ func (ts *testServer) partialExitsMatch(newOne ExitBlob) bool {
 	return *last.SignedExitMessage.Message == *newOne.SignedExitMessage.Message
 }
 
+// verifyIdentitySignature verifies that sig for hash has been created with operator's identity key.
+func verifyIdentitySignature(operator cluster.Operator, sig, hash []byte) error {
+	opENR, err := enr.Parse(operator.ENR)
+	if err != nil {
+		return errors.Wrap(err, "operator enr")
+	}
+
+	signature, err := ecdsa.ParseDERSignature(sig)
+	if err != nil {
+		return errors.Wrap(err, "read signature")
+	}
+
+	if !signature.Verify(hash, opENR.PubKey) {
+		return errors.New("identity signature verification failed")
+	}
+
+	return nil
+}
+
+// cleanTmpl cleans tmpl from '{' and '}', used in path definitions.
+func cleanTmpl(tmpl string) string {
+	return strings.NewReplacer(
+		"{",
+		"",
+		"}",
+		"").Replace(tmpl)
+}
+
 // MockServer returns a obol API mock test server.
 // It returns a http.Handler to be served over HTTP, and a function to add cluster lock files to its database.
 func MockServer() (http.Handler, func(lock cluster.Lock)) {
 	ts := testServer{
 		lock:         sync.Mutex{},
-		partialExits: map[string]PartialExits{},
+		partialExits: map[string][]exitBlob{},
 		lockFiles:    map[string]cluster.Lock{},
-		authTokens:   map[string]map[string]bool{},
 	}
 
 	router := mux.NewRouter()
 
-	router.Use(authMiddleware)
+	full := router.PathPrefix(fullExitBaseTmpl).Subrouter()
+	full.Use(authMiddleware)
+	full.HandleFunc(fullExitEndTmp, ts.HandleFullExit).Methods(http.MethodGet)
 
 	router.HandleFunc(partialExitTmpl, ts.HandlePartialExit).Methods(http.MethodPost)
-	router.HandleFunc(fullExitTmpl, ts.HandleFullExit).Methods(http.MethodGet)
 
 	return router, ts.addLockFiles
 }
@@ -228,9 +286,16 @@ func authMiddleware(next http.Handler) http.Handler {
 		bearer = strings.TrimSpace(bearer)
 		if bearer == "" {
 			writeErr(w, http.StatusUnauthorized, "missing authorization header")
+			return
 		}
 
-		r = r.WithContext(context.WithValue(r.Context(), tokenContextKey, bearer))
+		bearerBytes, err := base64.StdEncoding.DecodeString(bearer)
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, "bearer token must be base64-encoded")
+			return
+		}
+
+		r = r.WithContext(context.WithValue(r.Context(), tokenContextKey, bearerBytes))
 
 		// compare the return-value to the authMW
 		next.ServeHTTP(w, r)

@@ -3,13 +3,12 @@
 package keystore
 
 import (
-	"crypto/sha256"
-	"encoding/base64"
 	"fmt"
 	"os"
 	"path/filepath"
 
 	"github.com/attestantio/go-eth2-client/spec/phase0"
+	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/obolnetwork/charon/app/errors"
 	"github.com/obolnetwork/charon/app/k1util"
@@ -126,7 +125,7 @@ func LoadManifest(dir string) (*manifestpb.Cluster, []tbls.PrivateKey, error) {
 
 // loadIdentityKey loads the ENR identity key from dir.
 func loadIdentityKey(dir string) (enr.Record, error) {
-	key, err := k1util.Load(filepath.Join(dir, "charon-enr-private-key"))
+	key, err := IdentityPrivateKey(dir)
 	if err != nil {
 		return enr.Record{}, errors.Wrap(err, "load priv key")
 	}
@@ -174,16 +173,14 @@ func ShareIdxForCluster(dir string, cl *manifestpb.Cluster) (int, error) {
 	return shareIdx, nil
 }
 
-// AuthTokenFromIdentityKey returns the hash of the charon identity public key associated with the node in base64 form.
-func AuthTokenFromIdentityKey(dir string) (string, error) {
-	idKey, err := loadIdentityKey(dir)
+// IdentityPrivateKey returns the Charon identity private key.
+func IdentityPrivateKey(dir string) (*secp256k1.PrivateKey, error) {
+	key, err := k1util.Load(filepath.Join(dir, "charon-enr-private-key"))
 	if err != nil {
-		return "", errors.Wrap(err, "load identity key")
+		return nil, errors.Wrap(err, "load priv key")
 	}
 
-	h := sha256.Sum256(idKey.PubKey.SerializeCompressed())
-
-	return base64.StdEncoding.EncodeToString(h[:]), nil
+	return key, nil
 }
 
 // KeyshareToValidatorPubkey maps each share in cl to the associated validator private key.
