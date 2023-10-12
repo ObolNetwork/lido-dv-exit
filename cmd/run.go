@@ -30,6 +30,7 @@ func newRunCmd(root *cobra.Command, conf app.Config, entrypoint func(ctx context
 			return entrypoint(cmd.Context(), conf)
 		},
 	}
+
 	cmd.Flags().StringVarP(&conf.BeaconNodeURL, "beacon-node-url", "b", "", "URL pointing to a running ethereum beacon node.")
 	cmd.Flags().StringVarP(&conf.EjectorExitPath, "ejector-exit-path", "e", "", "Filesystem path to store full exit.")
 	cmd.Flags().StringVarP(&conf.CharonRuntimeDir, "charon-runtime-dir", "c", "", "Charon directory, containing the validator_keys directory and manifest file or lock file.")
