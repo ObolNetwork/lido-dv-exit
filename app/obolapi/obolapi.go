@@ -5,7 +5,6 @@ package obolapi
 import (
 	"bytes"
 	"context"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -156,7 +155,6 @@ func (c Client) GetFullExit(ctx context.Context, valPubkey string, authToken str
 		if len(sigStr) < 2 {
 			return ExitBlob{}, errors.New("signature string has invalid size", z.Int("size", len(sigStr)))
 		}
-
 
 		sigBytes, err := util.SignatureToBytes(sigStr)
 		if err != nil {
