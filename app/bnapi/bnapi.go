@@ -291,7 +291,6 @@ func (vsh *validatorStateHandler) getValidator(singleValidatorQuery bool) http.H
 			valIDs = append(valIDs, val)
 		} else {
 			valIDs = request.URL.Query()["id"]
-			fmt.Println("validator ids:", valIDs)
 			if len(valIDs) == 0 {
 				validatorNotFound(writer)
 				return
