@@ -22,14 +22,14 @@ func newVersionCmd(root *cobra.Command) {
 			info := vcsInfoMap(raw)
 
 			if !fullVersion {
-				fmt.Println(info["vcs.revision"])
+				fmt.Println(info["vcs.revision"]) //nolint:forbidigo // printing version
 				return nil
 			}
 
-			fmt.Println("lido-dv-exit")
+			fmt.Println("lido-dv-exit") //nolint:forbidigo // printing version
 
 			for k, v := range info {
-				fmt.Printf("%s: %s\n", k, v)
+				fmt.Printf("%s: %s\n", k, v) //nolint:forbidigo // printing version
 			}
 
 			return nil
@@ -43,7 +43,7 @@ func newVersionCmd(root *cobra.Command) {
 
 // vcsInfoMap gets vcs information from bi and returns them as a map[string]string.
 func vcsInfoMap(bi *debug.BuildInfo) map[string]string {
-	var ret = map[string]string{
+	ret := map[string]string{
 		"vcs.revision": "",
 		"vcs.time":     "",
 		"vcs.modified": "",

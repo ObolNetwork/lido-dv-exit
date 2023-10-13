@@ -15,10 +15,11 @@ import (
 	"sync/atomic"
 	"time"
 
-	ethApi "github.com/attestantio/go-eth2-client/api/v1"
-	"github.com/attestantio/go-eth2-client/spec/phase0"
+	eth2v1 "github.com/attestantio/go-eth2-client/api/v1"
+	eth2p0 "github.com/attestantio/go-eth2-client/spec/phase0"
 	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
+	"github.com/obolnetwork/charon/app/errors"
 )
 
 //go:embed mainnet_spec.json
@@ -80,14 +81,27 @@ func stringToStateID(s string) StateID {
 }
 
 // Run runs beacon mock on the provided bind port.
-func Run(_ context.Context, validators map[string]ethApi.Validator, bindAddr string) error {
+func Run(_ context.Context, validators map[string]eth2v1.Validator, bindAddr string) error {
 	hf := MockBeaconNode(validators)
 
-	return http.ListenAndServe(bindAddr, hf)
+	srv := http.Server{
+		ReadTimeout:       1 * time.Second,
+		WriteTimeout:      1 * time.Second,
+		IdleTimeout:       30 * time.Second,
+		ReadHeaderTimeout: 2 * time.Second,
+		Handler:           hf,
+		Addr:              bindAddr,
+	}
+
+	if err := srv.ListenAndServe(); err != nil {
+		return errors.Wrap(err, "beacon node mock error")
+	}
+
+	return nil
 }
 
 // MockBeaconNode returns a beacon node http.Handler mock with the provided validator map.
-func MockBeaconNode(validators map[string]ethApi.Validator) http.Handler {
+func MockBeaconNode(validators map[string]eth2v1.Validator) http.Handler {
 	router := mux.NewRouter()
 
 	var slot atomic.Uint64
@@ -153,34 +167,34 @@ func MockBeaconNode(validators map[string]ethApi.Validator) http.Handler {
 
 	router.Handle("/eth/v1/config/deposit_contract", logHandler(func(writer http.ResponseWriter, request *http.Request) {
 		_ = json.NewEncoder(writer).Encode(struct {
-			Data *ethApi.DepositContract `json:"data"`
+			Data *eth2v1.DepositContract `json:"data"`
 		}{})
 	}))
 
 	router.Handle("/eth/v1/config/fork_schedule", logHandler(func(writer http.ResponseWriter, request *http.Request) {
 		_ = json.NewEncoder(writer).Encode(struct {
-			Data []*phase0.Fork `json:"data"`
+			Data []*eth2p0.Fork `json:"data"`
 		}{
-			Data: []*phase0.Fork{
+			Data: []*eth2p0.Fork{
 				{
-					PreviousVersion: phase0.Version{00, 00, 00, 00},
-					CurrentVersion:  phase0.Version{00, 00, 00, 00},
-					Epoch:           phase0.Epoch(0),
+					PreviousVersion: eth2p0.Version{0o0, 0o0, 0o0, 0o0},
+					CurrentVersion:  eth2p0.Version{0o0, 0o0, 0o0, 0o0},
+					Epoch:           eth2p0.Epoch(0),
 				},
 				{
-					PreviousVersion: phase0.Version{00, 00, 00, 00},
-					CurrentVersion:  phase0.Version{01, 00, 00, 00},
-					Epoch:           phase0.Epoch(74240),
+					PreviousVersion: eth2p0.Version{0o0, 0o0, 0o0, 0o0},
+					CurrentVersion:  eth2p0.Version{0o1, 0o0, 0o0, 0o0},
+					Epoch:           eth2p0.Epoch(74240),
 				},
 				{
-					PreviousVersion: phase0.Version{01, 00, 00, 00},
-					CurrentVersion:  phase0.Version{02, 00, 00, 00},
-					Epoch:           phase0.Epoch(144896),
+					PreviousVersion: eth2p0.Version{0o1, 0o0, 0o0, 0o0},
+					CurrentVersion:  eth2p0.Version{0o2, 0o0, 0o0, 0o0},
+					Epoch:           eth2p0.Epoch(144896),
 				},
 				{
-					PreviousVersion: phase0.Version{02, 00, 00, 00},
-					CurrentVersion:  phase0.Version{03, 00, 00, 00},
-					Epoch:           phase0.Epoch(194048),
+					PreviousVersion: eth2p0.Version{0o2, 0o0, 0o0, 0o0},
+					CurrentVersion:  eth2p0.Version{0o3, 0o0, 0o0, 0o0},
+					Epoch:           eth2p0.Epoch(194048),
 				},
 			},
 		})
@@ -188,14 +202,14 @@ func MockBeaconNode(validators map[string]ethApi.Validator) http.Handler {
 
 	router.Handle("/eth/v1/beacon/states/{state_id}/fork", logHandler(func(writer http.ResponseWriter, request *http.Request) {
 		_ = json.NewEncoder(writer).Encode(struct {
-			Data      *phase0.Fork `json:"data"`
+			Data      *eth2p0.Fork `json:"data"`
 			Finalized bool         `json:"finalized"`
 		}{
 			Finalized: true,
-			Data: &phase0.Fork{
-				PreviousVersion: phase0.Version{02, 00, 00, 00},
-				CurrentVersion:  phase0.Version{03, 00, 00, 00},
-				Epoch:           phase0.Epoch(194048),
+			Data: &eth2p0.Fork{
+				PreviousVersion: eth2p0.Version{0o2, 0o0, 0o0, 0o0},
+				CurrentVersion:  eth2p0.Version{0o3, 0o0, 0o0, 0o0},
+				Epoch:           eth2p0.Epoch(194048),
 			},
 		})
 	}))
@@ -222,16 +236,16 @@ func MockBeaconNode(validators map[string]ethApi.Validator) http.Handler {
 }
 
 type getValidatorsResponse struct {
-	Data []*ethApi.Validator `json:"data"`
+	Data []*eth2v1.Validator `json:"data"`
 }
 
 type getValidatorResponse struct {
-	Data *ethApi.Validator `json:"data"`
+	Data *eth2v1.Validator `json:"data"`
 }
 
 type validatorStateHandler struct {
 	lock       sync.Mutex
-	validators map[string]ethApi.Validator
+	validators map[string]eth2v1.Validator
 }
 
 func (vsh *validatorStateHandler) exitValidator(slotCounter *atomic.Uint64) http.HandlerFunc {
@@ -239,14 +253,13 @@ func (vsh *validatorStateHandler) exitValidator(slotCounter *atomic.Uint64) http
 		vsh.lock.Lock()
 		defer vsh.lock.Unlock()
 
-		var exitMsg phase0.SignedVoluntaryExit
+		var exitMsg eth2p0.SignedVoluntaryExit
 
 		if err := json.NewDecoder(request.Body).Decode(&exitMsg); err != nil {
 			errBytes, err := json.Marshal(Error{
 				Code:    http.StatusBadRequest,
 				Message: "Bad Request",
 			})
-
 			if err != nil {
 				writer.WriteHeader(http.StatusInternalServerError)
 				return
@@ -263,9 +276,9 @@ func (vsh *validatorStateHandler) exitValidator(slotCounter *atomic.Uint64) http
 			return
 		}
 
-		validator.Validator.ExitEpoch = phase0.Epoch(slotCounter.Load() + 10000) // exit in 10000 slots
+		validator.Validator.ExitEpoch = eth2p0.Epoch(slotCounter.Load() + 10000) // exit in 10000 slots
 
-		validator.Status = ethApi.ValidatorStateActiveExiting
+		validator.Status = eth2v1.ValidatorStateActiveExiting
 
 		vsh.validators[vIdxStr] = validator
 
@@ -313,7 +326,6 @@ func (vsh *validatorStateHandler) getValidator(singleValidatorQuery bool) http.H
 				Code:    http.StatusBadRequest,
 				Message: fmt.Sprintf("Invalid state ID: %s", rawStateID),
 			})
-
 			if err != nil {
 				writer.WriteHeader(http.StatusInternalServerError)
 				return
@@ -321,6 +333,7 @@ func (vsh *validatorStateHandler) getValidator(singleValidatorQuery bool) http.H
 
 			writer.WriteHeader(http.StatusBadRequest)
 			_, _ = writer.Write(errBytes)
+
 			return
 		}
 
@@ -364,6 +377,7 @@ func (vsh *validatorStateHandler) getValidator(singleValidatorQuery bool) http.H
 
 			writer.WriteHeader(http.StatusInternalServerError)
 			_, _ = writer.Write(errBytes)
+
 			return
 		}
 	}
@@ -374,7 +388,6 @@ func validatorNotFound(writer http.ResponseWriter) {
 		Code:    http.StatusNotFound,
 		Message: "Validator not found",
 	})
-
 	if err != nil {
 		writer.WriteHeader(http.StatusInternalServerError)
 		return

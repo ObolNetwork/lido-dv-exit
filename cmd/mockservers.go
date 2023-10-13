@@ -8,7 +8,7 @@ import (
 	"encoding/json"
 	"os"
 
-	ethApi "github.com/attestantio/go-eth2-client/api/v1"
+	eth2v1 "github.com/attestantio/go-eth2-client/api/v1"
 	eth2p0 "github.com/attestantio/go-eth2-client/spec/phase0"
 	"github.com/obolnetwork/charon/app/errors"
 	"github.com/obolnetwork/charon/app/log"
@@ -22,11 +22,11 @@ import (
 type bmockCliConfig struct {
 	ValidatorsPubkeys []string
 	LockFilePath      string
-	ObolApiBind       string
+	ObolAPIBind       string
 	BeaconMockBind    string
 
 	LockFiles  []cluster.Lock
-	Validators map[string]ethApi.Validator
+	Validators map[string]eth2v1.Validator
 
 	Log log.Config
 }
@@ -34,25 +34,24 @@ type bmockCliConfig struct {
 // newMockServersCmd adds the "mockservers" command to root.
 func newMockServersCmd(
 	root *cobra.Command,
-	bnapiMock func(ctx context.Context, validators map[string]ethApi.Validator, bindAddr string) error,
-	obolApiMock func(_ context.Context, bind string, locks []cluster.Lock) error,
+	bnapiMock func(ctx context.Context, validators map[string]eth2v1.Validator, bindAddr string) error,
+	obolAPIMock func(_ context.Context, bind string, locks []cluster.Lock) error,
 ) {
-
 	bcc := bmockCliConfig{
-		Validators: map[string]ethApi.Validator{},
+		Validators: map[string]eth2v1.Validator{},
 	}
 
 	cmd := &cobra.Command{
 		Use:   "mockservers",
 		Short: "Runs the beacon mock implementation.",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runMockServers(cmd, bcc, bnapiMock, obolApiMock)
+			return runMockServers(cmd, bcc, bnapiMock, obolAPIMock)
 		},
 	}
 
 	cmd.Flags().StringSliceVar(&bcc.ValidatorsPubkeys, "validators", []string{}, "Comma separated string containing ethereum validators public keys")
 	cmd.Flags().StringVar(&bcc.BeaconMockBind, "beacon-node-bind-address", "localhost:9999", "Bind address for beacon node mock in the form of host:port")
-	cmd.Flags().StringVar(&bcc.ObolApiBind, "obol-api-bind-address", "localhost:9998", "Bind address for obol api mock in the form of host:port")
+	cmd.Flags().StringVar(&bcc.ObolAPIBind, "obol-api-bind-address", "localhost:9998", "Bind address for obol api mock in the form of host:port")
 	cmd.Flags().StringVar(&bcc.LockFilePath, "lockfile-path", "", "Path for the lock file to be stored in the obol api mock")
 
 	bindLogFlags(cmd.Flags(), &bcc.Log)
@@ -66,10 +65,10 @@ func newMockServersCmd(
 
 			valPubk := eth2p0.BLSPubKey(b)
 
-			bcc.Validators[rawVal] = ethApi.Validator{
+			bcc.Validators[rawVal] = eth2v1.Validator{
 				Index:   eth2p0.ValidatorIndex(idx + 1),
 				Balance: 42,
-				Status:  ethApi.ValidatorStateActiveOngoing,
+				Status:  eth2v1.ValidatorStateActiveOngoing,
 				Validator: &eth2p0.Validator{
 					PublicKey:                  valPubk,
 					WithdrawalCredentials:      rand32(),
@@ -87,7 +86,7 @@ func newMockServersCmd(
 			return errors.New("missing beacon node mock bind address")
 		}
 
-		if bcc.ObolApiBind == "" {
+		if bcc.ObolAPIBind == "" {
 			return errors.New("missing obol api mock bind address")
 		}
 
@@ -112,8 +111,8 @@ func newMockServersCmd(
 func runMockServers(
 	cmd *cobra.Command,
 	conf bmockCliConfig,
-	bnapiMock func(ctx context.Context, validators map[string]ethApi.Validator, bindAddr string) error,
-	obolApiMock func(_ context.Context, bind string, locks []cluster.Lock) error,
+	bnapiMock func(ctx context.Context, validators map[string]eth2v1.Validator, bindAddr string) error,
+	obolAPIMock func(_ context.Context, bind string, locks []cluster.Lock) error,
 ) error {
 	if err := log.InitLogger(conf.Log); err != nil {
 		return err
@@ -130,10 +129,14 @@ func runMockServers(
 	})
 
 	eg.Go(func() error {
-		return obolApiMock(ctx, conf.ObolApiBind, conf.LockFiles)
+		return obolAPIMock(ctx, conf.ObolAPIBind, conf.LockFiles)
 	})
 
-	return eg.Wait()
+	if err := eg.Wait(); err != nil {
+		return errors.Wrap(err, "mockservers error")
+	}
+
+	return nil
 }
 
 func rand32() []byte {

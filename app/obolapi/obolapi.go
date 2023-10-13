@@ -41,7 +41,7 @@ func bearerString(token string) string {
 	return fmt.Sprintf("Bearer %s", token)
 }
 
-// TODO(gsora): validate public key
+// TODO(gsora): validate public key.
 func fullExitURL(valPubkey string) string {
 	return strings.NewReplacer(
 		valPubkeyPath,
@@ -101,6 +101,10 @@ func (c Client) PostPartialExit(ctx context.Context, lockHash string, authToken 
 		return errors.Wrap(err, "http post error")
 	}
 
+	defer func() {
+		_ = resp.Body.Close()
+	}()
+
 	if resp.StatusCode != http.StatusCreated {
 		return errors.New("http error", z.Int("status_code", resp.StatusCode))
 	}
@@ -136,6 +140,7 @@ func (c Client) GetFullExit(ctx context.Context, valPubkey string, authToken str
 		if resp.StatusCode == http.StatusNotFound {
 			return ExitBlob{}, ErrNoExit
 		}
+
 		return ExitBlob{}, errors.New("http error", z.Int("status_code", resp.StatusCode))
 	}
 
