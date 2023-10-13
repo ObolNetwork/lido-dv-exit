@@ -17,7 +17,6 @@ func main() {
 	ctx = log.WithTopic(ctx, "cmd")
 
 	err := cmd.Run(ctx)
-
 	if err != nil {
 		log.Error(ctx, "Fatal error", err)
 		os.Exit(1)

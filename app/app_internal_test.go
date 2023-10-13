@@ -7,8 +7,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	ethApi "github.com/attestantio/go-eth2-client/api/v1"
-	"github.com/attestantio/go-eth2-client/spec/phase0"
+	eth2v1 "github.com/attestantio/go-eth2-client/api/v1"
+	eth2p0 "github.com/attestantio/go-eth2-client/spec/phase0"
 	"github.com/obolnetwork/charon/testutil"
 	"github.com/stretchr/testify/require"
 
@@ -18,12 +18,12 @@ import (
 func Test_eth2Client(t *testing.T) {
 	ongoingVal := testutil.RandomEth2PubKey(t)
 
-	r := bnapi.MockBeaconNode(map[string]ethApi.Validator{
+	r := bnapi.MockBeaconNode(map[string]eth2v1.Validator{
 		ongoingVal.String(): {
 			Index:   42,
 			Balance: 42,
-			Status:  ethApi.ValidatorStateActiveOngoing,
-			Validator: &phase0.Validator{
+			Status:  eth2v1.ValidatorStateActiveOngoing,
+			Validator: &eth2p0.Validator{
 				PublicKey:                  ongoingVal,
 				WithdrawalCredentials:      testutil.RandomBytes32(),
 				EffectiveBalance:           42,
@@ -45,7 +45,7 @@ func Test_eth2Client(t *testing.T) {
 	client, err := eth2Client(ctx, srv.URL)
 	require.NoError(t, err)
 
-	vals, err := client.ValidatorsByPubKey(ctx, bnapi.StateIDFinalized.String(), []phase0.BLSPubKey{ongoingVal})
+	vals, err := client.ValidatorsByPubKey(ctx, bnapi.StateIDFinalized.String(), []eth2p0.BLSPubKey{ongoingVal})
 	require.NoError(t, err)
 
 	require.NotEmpty(t, vals)

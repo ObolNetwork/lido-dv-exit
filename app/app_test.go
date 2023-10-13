@@ -13,9 +13,10 @@ import (
 	"testing"
 	"time"
 
-	ethApi "github.com/attestantio/go-eth2-client/api/v1"
-	"github.com/attestantio/go-eth2-client/http"
-	"github.com/attestantio/go-eth2-client/spec/phase0"
+	eth2v1 "github.com/attestantio/go-eth2-client/api/v1"
+	eth2http "github.com/attestantio/go-eth2-client/http"
+	eth2p0 "github.com/attestantio/go-eth2-client/spec/phase0"
+	"github.com/obolnetwork/charon/app/errors"
 	"github.com/obolnetwork/charon/app/eth2wrap"
 	"github.com/obolnetwork/charon/app/k1util"
 	"github.com/obolnetwork/charon/app/log"
@@ -35,7 +36,7 @@ import (
 	"github.com/ObolNetwork/lido-dv-exit/app/obolapi"
 )
 
-const exitEpoch = phase0.Epoch(194048)
+const exitEpoch = eth2p0.Epoch(194048)
 
 func Test_RunFlow(t *testing.T) {
 	valAmt := 4
@@ -66,24 +67,24 @@ func Test_RunFlow(t *testing.T) {
 
 	baseDir := t.TempDir()
 	ejectorDir := filepath.Join(t.TempDir(), "ejector")
-	require.NoError(t, os.Mkdir(ejectorDir, 0755))
+	require.NoError(t, os.Mkdir(ejectorDir, 0o755))
 
 	// write private keys and manifest files
 	for opIdx := 0; opIdx < operatorAmt; opIdx++ {
-		opId := fmt.Sprintf("op%d", opIdx)
-		oDir := filepath.Join(baseDir, opId)
-		eDir := filepath.Join(ejectorDir, opId)
+		opID := fmt.Sprintf("op%d", opIdx)
+		oDir := filepath.Join(baseDir, opID)
+		eDir := filepath.Join(ejectorDir, opID)
 		keysDir := filepath.Join(oDir, "validator_keys")
 		manifestFile := filepath.Join(oDir, "cluster-manifest.pb")
 
-		require.NoError(t, os.MkdirAll(oDir, 0755))
+		require.NoError(t, os.MkdirAll(oDir, 0o755))
 		require.NoError(t, k1util.Save(enrs[opIdx], filepath.Join(oDir, "charon-enr-private-key")))
 
-		require.NoError(t, os.MkdirAll(keysDir, 0755))
-		require.NoError(t, os.MkdirAll(eDir, 0755))
+		require.NoError(t, os.MkdirAll(keysDir, 0o755))
+		require.NoError(t, os.MkdirAll(eDir, 0o755))
 
 		require.NoError(t, ckeystore.StoreKeysInsecure(operatorShares[opIdx], keysDir, ckeystore.ConfirmInsecureKeys))
-		require.NoError(t, os.WriteFile(manifestFile, mBytes, 0755))
+		require.NoError(t, os.WriteFile(manifestFile, mBytes, 0o755))
 	}
 
 	// wire test server for obol api
@@ -96,15 +97,15 @@ func Test_RunFlow(t *testing.T) {
 
 	// wire eth mock server
 
-	mockValidators := map[string]ethApi.Validator{}
+	mockValidators := map[string]eth2v1.Validator{}
 
 	for _, val := range lock.Validators {
-		mockValidators[val.PublicKeyHex()] = ethApi.Validator{
-			Index:   phase0.ValidatorIndex(rand.Int63()),
+		mockValidators[val.PublicKeyHex()] = eth2v1.Validator{
+			Index:   eth2p0.ValidatorIndex(rand.Int63()),
 			Balance: 42,
-			Status:  ethApi.ValidatorStateActiveOngoing,
-			Validator: &phase0.Validator{
-				PublicKey:                  phase0.BLSPubKey(val.PubKey),
+			Status:  eth2v1.ValidatorStateActiveOngoing,
+			Validator: &eth2p0.Validator{
+				PublicKey:                  eth2p0.BLSPubKey(val.PubKey),
 				WithdrawalCredentials:      testutil.RandomBytes32(),
 				EffectiveBalance:           42,
 				Slashed:                    false,
@@ -121,7 +122,7 @@ func Test_RunFlow(t *testing.T) {
 	defer bnapiServer.Close()
 
 	runConfForIdx := func(idx int) app.Config {
-		opId := fmt.Sprintf("op%d", idx)
+		opID := fmt.Sprintf("op%d", idx)
 
 		return app.Config{
 			Log: log.Config{
@@ -130,8 +131,8 @@ func Test_RunFlow(t *testing.T) {
 				Color:  "false",
 			},
 			BeaconNodeURL:    bnapiServer.URL,
-			EjectorExitPath:  filepath.Join(ejectorDir, opId),
-			CharonRuntimeDir: filepath.Join(baseDir, opId),
+			EjectorExitPath:  filepath.Join(ejectorDir, opID),
+			CharonRuntimeDir: filepath.Join(baseDir, opID),
 			ObolAPIURL:       oapiServer.URL,
 			ExitEpoch:        194048,
 		}
@@ -144,7 +145,11 @@ func Test_RunFlow(t *testing.T) {
 	for opIdx := 0; opIdx < operatorAmt; opIdx++ {
 		opIdx := opIdx
 		eg.Go(func() error {
-			return app.Run(ctx, runConfForIdx(opIdx))
+			if err := app.Run(ctx, runConfForIdx(opIdx)); err != nil {
+				return errors.Wrap(err, "app run")
+			}
+
+			return nil
 		})
 	}
 
@@ -154,9 +159,9 @@ func Test_RunFlow(t *testing.T) {
 
 	// check that all produced exit messages are signed by all partial keys for all operators
 	for opIdx := 0; opIdx < operatorAmt; opIdx++ {
-		opId := fmt.Sprintf("op%d", opIdx)
+		opID := fmt.Sprintf("op%d", opIdx)
 
-		ejectorDir := filepath.Join(ejectorDir, opId)
+		ejectorDir := filepath.Join(ejectorDir, opID)
 
 		for _, val := range lock.Validators {
 			eFile := filepath.Join(ejectorDir, fmt.Sprintf("validator-exit-%s.json", val.PublicKeyHex()))
@@ -164,7 +169,7 @@ func Test_RunFlow(t *testing.T) {
 			fc, err := os.ReadFile(eFile)
 			require.NoError(t, err)
 
-			var exit phase0.SignedVoluntaryExit
+			var exit eth2p0.SignedVoluntaryExit
 			require.NoError(t, json.Unmarshal(fc, &exit))
 
 			sigRoot, err := exit.Message.HashTreeRoot()
@@ -173,7 +178,7 @@ func Test_RunFlow(t *testing.T) {
 			domain, err := signing.GetDomain(context.Background(), mockEth2Cl, signing.DomainExit, exitEpoch)
 			require.NoError(t, err)
 
-			sigData, err := (&phase0.SigningData{ObjectRoot: sigRoot, Domain: domain}).HashTreeRoot()
+			sigData, err := (&eth2p0.SigningData{ObjectRoot: sigRoot, Domain: domain}).HashTreeRoot()
 			require.NoError(t, err)
 
 			pubkBytes, err := val.PublicKey()
@@ -187,13 +192,14 @@ func Test_RunFlow(t *testing.T) {
 func eth2Client(t *testing.T, ctx context.Context, bnURL string) eth2wrap.Client {
 	t.Helper()
 
-	bnHttpClient, err := http.New(ctx,
-		http.WithAddress(bnURL),
-		http.WithLogLevel(zerolog.InfoLevel),
+	bnHTTPClient, err := eth2http.New(ctx,
+		eth2http.WithAddress(bnURL),
+		eth2http.WithLogLevel(zerolog.InfoLevel),
 	)
 
 	require.NoError(t, err)
 
-	bnClient := bnHttpClient.(*http.Service)
+	bnClient := bnHTTPClient.(*eth2http.Service)
+
 	return eth2wrap.AdaptEth2HTTP(bnClient, 1*time.Second)
 }

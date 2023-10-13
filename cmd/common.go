@@ -40,7 +40,11 @@ func Run(ctx context.Context) error {
 	newMockServersCmd(root, bnapi.Run, obolapi.Run)
 	newVersionCmd(root)
 
-	return root.ExecuteContext(ctx)
+	if err := root.ExecuteContext(ctx); err != nil {
+		return errors.Wrap(err, "run error")
+	}
+
+	return nil
 }
 
 // flagsToLogFields converts the given flags to log fields.

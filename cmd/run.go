@@ -64,7 +64,8 @@ func newRunCmd(root *cobra.Command, conf app.Config, entrypoint func(ctx context
 func dirWritable(dir string) error {
 	testFile := filepath.Join(dir, ".test-file")
 
-	if err := os.WriteFile(testFile, []byte("testfile"), 0755); err != nil {
+	//nolint:gosec // test file, will be deleted immediately
+	if err := os.WriteFile(testFile, []byte("testfile"), 0o755); err != nil {
 		return errors.Wrap(err, "directory access")
 	}
 

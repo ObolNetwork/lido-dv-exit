@@ -88,7 +88,6 @@ func TestKeyshareToValidatorPubkey(t *testing.T) {
 		require.True(t, valFound, "validator pubkey not found")
 		require.True(t, sharePrivKeyFound, "share priv key not found")
 	}
-
 }
 
 func TestLoadManifest(t *testing.T) {
@@ -131,10 +130,10 @@ func TestLoadManifest(t *testing.T) {
 		keysDir := filepath.Join(oDir, "validator_keys")
 		manifestFile := filepath.Join(oDir, "cluster-manifest.pb")
 
-		require.NoError(t, os.MkdirAll(keysDir, 0755))
+		require.NoError(t, os.MkdirAll(keysDir, 0o755))
 
 		require.NoError(t, ckeystore.StoreKeysInsecure(operatorShares[opIdx], keysDir, ckeystore.ConfirmInsecureKeys))
-		require.NoError(t, os.WriteFile(manifestFile, mBytes, 0755))
+		require.NoError(t, os.WriteFile(manifestFile, mBytes, 0o755))
 
 		readCl, readKeys, err := keystore.LoadManifest(oDir)
 		require.NoError(t, err)

@@ -14,7 +14,7 @@ const (
 	// validatorPubkBytesLen is the amount of bytes a well-formed validator public key must contain.
 	validatorPubkBytesLen = 48
 
-	// signatureBytesLen is the amount of bytes a well-formed validator signature must contain
+	// signatureBytesLen is the amount of bytes a well-formed validator signature must contain.
 	signatureBytesLen = 96
 )
 

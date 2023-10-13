@@ -1,7 +1,7 @@
 repos:
   # First run code formatters
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.1.0
+    rev: v4.5.0
     hooks:
       - id: trailing-whitespace # trims trailing whitespace
         exclude: "testdata"
@@ -28,13 +28,13 @@ repos:
       - id: go-fiximports # format imports for go source files
 
   - repo: https://github.com/tekwizely/pre-commit-golang
-    rev: v1.0.0-beta.5 # cannot use master as it is a mutable reference and is not supported
+    rev: v1.0.0-rc.1 # cannot use master as it is a mutable reference and is not supported
     hooks:
       - id: go-mod-tidy
         files: go.mod
 
   - repo: https://github.com/dnephin/pre-commit-golang
-    rev: v0.4.0
+    rev: v0.5.1
     hooks:
       - id: go-fmt
         args: [ -w, -s ] # simplify code and write result to (source) file instead of stdout
@@ -42,7 +42,7 @@ repos:
   # Then run code validators (on the formatted code)
 
   - repo: https://github.com/golangci/golangci-lint # See .golangci.yml for config
-    rev: v1.51.2
+    rev: v1.54.2
     hooks:
       - id: golangci-lint
 

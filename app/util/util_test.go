@@ -1,6 +1,6 @@
 // Copyright © 2022-2023 Obol Labs Inc. Licensed under the terms of a Business Source License 1.1
 
-package util
+package util_test
 
 import (
 	"bytes"
@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/ObolNetwork/lido-dv-exit/app/util"
 )
 
 func TestValidatorPubkeyToBytes(t *testing.T) {
@@ -45,10 +47,11 @@ func TestValidatorPubkeyToBytes(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := ValidatorPubkeyToBytes(tt.pubkey)
+			got, err := util.ValidatorPubkeyToBytes(tt.pubkey)
 			if tt.wantErr {
 				require.Error(t, err)
 				require.Empty(t, got)
+
 				return
 			}
 
@@ -93,10 +96,11 @@ func TestSignatureToBytes(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := SignatureToBytes(tt.pubkey)
+			got, err := util.SignatureToBytes(tt.pubkey)
 			if tt.wantErr {
 				require.Error(t, err)
 				require.Empty(t, got)
+
 				return
 			}
 
