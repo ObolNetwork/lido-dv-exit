@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/attestantio/go-eth2-client/http"
-	"github.com/attestantio/go-eth2-client/spec/phase0"
+	eth2http "github.com/attestantio/go-eth2-client/http"
+	eth2p0 "github.com/attestantio/go-eth2-client/spec/phase0"
 	"github.com/obolnetwork/charon/app/eth2wrap"
 	"github.com/obolnetwork/charon/cluster"
 	"github.com/obolnetwork/charon/eth2util/signing"
@@ -22,7 +22,7 @@ import (
 	"github.com/ObolNetwork/lido-dv-exit/app/obolapi"
 )
 
-const exitEpoch = phase0.Epoch(162304)
+const exitEpoch = eth2p0.Epoch(162304)
 
 func TestAPIFlow(t *testing.T) {
 	kn := 4
@@ -47,12 +47,12 @@ func TestAPIFlow(t *testing.T) {
 
 	addLockFiles(lock)
 
-	exitMsg := phase0.SignedVoluntaryExit{
-		Message: &phase0.VoluntaryExit{
+	exitMsg := eth2p0.SignedVoluntaryExit{
+		Message: &eth2p0.VoluntaryExit{
 			Epoch:          42,
 			ValidatorIndex: 42,
 		},
-		Signature: phase0.BLSSignature{},
+		Signature: eth2p0.BLSSignature{},
 	}
 
 	sigRoot, err := exitMsg.Message.HashTreeRoot()
@@ -61,7 +61,7 @@ func TestAPIFlow(t *testing.T) {
 	domain, err := signing.GetDomain(context.Background(), mockEth2Cl, signing.DomainExit, exitEpoch)
 	require.NoError(t, err)
 
-	sigData, err := (&phase0.SigningData{ObjectRoot: sigRoot, Domain: domain}).HashTreeRoot()
+	sigData, err := (&eth2p0.SigningData{ObjectRoot: sigRoot, Domain: domain}).HashTreeRoot()
 	require.NoError(t, err)
 
 	for idx := 0; idx < len(shares); idx++ {
@@ -72,7 +72,7 @@ func TestAPIFlow(t *testing.T) {
 			require.NoError(t, err)
 
 			exitMsg := exitMsg
-			exitMsg.Signature = phase0.BLSSignature(signature)
+			exitMsg.Signature = eth2p0.BLSSignature(signature)
 
 			exit := obolapi.ExitBlob{
 				PublicKey:         lock.Validators[0].PublicKeyHex(),
@@ -111,13 +111,14 @@ func TestAPIFlow(t *testing.T) {
 func eth2Client(t *testing.T, ctx context.Context, bnURL string) eth2wrap.Client {
 	t.Helper()
 
-	bnHttpClient, err := http.New(ctx,
-		http.WithAddress(bnURL),
-		http.WithLogLevel(zerolog.InfoLevel),
+	bnHTTPClient, err := eth2http.New(ctx,
+		eth2http.WithAddress(bnURL),
+		eth2http.WithLogLevel(zerolog.InfoLevel),
 	)
 
 	require.NoError(t, err)
 
-	bnClient := bnHttpClient.(*http.Service)
+	bnClient := bnHTTPClient.(*eth2http.Service)
+
 	return eth2wrap.AdaptEth2HTTP(bnClient, 1*time.Second)
 }

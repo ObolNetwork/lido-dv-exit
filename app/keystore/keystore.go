@@ -7,7 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/attestantio/go-eth2-client/spec/phase0"
+	eth2p0 "github.com/attestantio/go-eth2-client/spec/phase0"
 	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/obolnetwork/charon/app/errors"
@@ -33,21 +33,21 @@ type KeyShare struct {
 // ValidatorPubkey is a 0x-prefixed validator public key.
 type ValidatorPubkey string
 
-// Phase0 return vp as a phase0.BLSPubKey key.
-func (vp ValidatorPubkey) Phase0() (phase0.BLSPubKey, error) {
+// Phase0 return vp as a eth2p0.BLSPubKey key.
+func (vp ValidatorPubkey) Phase0() (eth2p0.BLSPubKey, error) {
 	rawPubk, err := util.ValidatorPubkeyToBytes(string(vp))
 	if err != nil {
-		return phase0.BLSPubKey{}, errors.Wrap(err, "validator pubkey from hex")
+		return eth2p0.BLSPubKey{}, errors.Wrap(err, "validator pubkey from hex")
 	}
 
 	tPubk, err := tblsconv.PubkeyFromBytes(rawPubk)
 	if err != nil {
-		return phase0.BLSPubKey{}, errors.Wrap(err, "validator pubkey from bytes")
+		return eth2p0.BLSPubKey{}, errors.Wrap(err, "validator pubkey from bytes")
 	}
 
 	pubk, err := tblsconv.PubkeyToETH2(tPubk)
 	if err != nil {
-		return phase0.BLSPubKey{}, errors.Wrap(err, "validator pubkey from tbls pubkey")
+		return eth2p0.BLSPubKey{}, errors.Wrap(err, "validator pubkey from tbls pubkey")
 	}
 
 	return pubk, nil
@@ -56,9 +56,9 @@ func (vp ValidatorPubkey) Phase0() (phase0.BLSPubKey, error) {
 // ValidatorShares maps each ValidatorPubkey to the associated KeyShare.
 type ValidatorShares map[ValidatorPubkey]KeyShare
 
-// ValidatorsPhase0 returns validator keys from vs as their phase0.BLSPubKey versions.
-func (vs ValidatorShares) ValidatorsPhase0() ([]phase0.BLSPubKey, error) {
-	var ret []phase0.BLSPubKey
+// ValidatorsPhase0 returns validator keys from vs as their eth2p0.BLSPubKey versions.
+func (vs ValidatorShares) ValidatorsPhase0() ([]eth2p0.BLSPubKey, error) {
+	var ret []eth2p0.BLSPubKey
 
 	for val := range vs {
 		p0Val, err := val.Phase0()
@@ -81,7 +81,6 @@ func clusterFile(dir string) (*manifestpb.Cluster, error) {
 	cl, err := manifest.LoadCluster(manifestFile, lockFile, func(_ cluster.Lock) error {
 		return nil // don't verify signatures, we don't care
 	})
-
 	if err != nil {
 		return nil, errors.Wrap(err, "manifest load error")
 	}
@@ -220,6 +219,7 @@ func KeyshareToValidatorPubkey(cl *manifestpb.Cluster, shares []tbls.PrivateKey)
 				Index: shareIdx + 1,
 			}
 			found = true
+
 			break
 		}
 

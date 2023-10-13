@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/decred/dcrd/dcrec/secp256k1/v4/ecdsa"
 	"github.com/gorilla/mux"
@@ -277,7 +278,20 @@ func Run(_ context.Context, bind string, locks []cluster.Lock) error {
 		addLock(lock)
 	}
 
-	return http.ListenAndServe(bind, ms)
+	srv := http.Server{
+		ReadTimeout:       1 * time.Second,
+		WriteTimeout:      1 * time.Second,
+		IdleTimeout:       30 * time.Second,
+		ReadHeaderTimeout: 2 * time.Second,
+		Handler:           ms,
+		Addr:              bind,
+	}
+
+	if err := srv.ListenAndServe(); err != nil {
+		return errors.Wrap(err, "obol api mock error")
+	}
+
+	return nil
 }
 
 func authMiddleware(next http.Handler) http.Handler {

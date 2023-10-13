@@ -9,8 +9,8 @@ import (
 	"path/filepath"
 	"time"
 
-	ethApi "github.com/attestantio/go-eth2-client/api/v1"
-	"github.com/attestantio/go-eth2-client/http"
+	eth2v1 "github.com/attestantio/go-eth2-client/api/v1"
+	eth2http "github.com/attestantio/go-eth2-client/http"
 	eth2p0 "github.com/attestantio/go-eth2-client/spec/phase0"
 	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 	"github.com/obolnetwork/charon/app/errors"
@@ -84,7 +84,7 @@ func Run(ctx context.Context, config Config) error {
 	}
 
 	// TODO(gsora): check obol api url, see if correct
-	oApi := obolapi.Client{ObolAPIUrl: config.ObolAPIURL}
+	oAPI := obolapi.Client{ObolAPIUrl: config.ObolAPIURL}
 
 	tick := time.NewTicker(1 * time.Second)
 
@@ -142,8 +142,8 @@ func Run(ctx context.Context, config Config) error {
 
 	// send signed  exit to obol api
 	for range tick.C {
-		// we're retrying every second until we succeeed
-		if postPartialExit(ctx, oApi, cl.GetInitialMutationHash(), shareIdx, identityKey, signedExits...) {
+		// we're retrying every second until we succeed
+		if postPartialExit(ctx, oAPI, cl.GetInitialMutationHash(), shareIdx, identityKey, signedExits...) {
 			tick.Stop()
 			break
 		}
@@ -163,7 +163,7 @@ func Run(ctx context.Context, config Config) error {
 		exitFSPath := filepath.Join(config.EjectorExitPath, fmt.Sprintf("validator-exit-%s.json", data.validatorPubkey))
 
 		for range tick.C {
-			if fetchFullExit(ctx, bnClient, oApi, data.lockHash, data.validatorPubkey, exitFSPath, data.shareIndex, data.identityKey) {
+			if fetchFullExit(ctx, bnClient, oAPI, data.lockHash, data.validatorPubkey, exitFSPath, data.shareIndex, data.identityKey) {
 				break
 			}
 		}
@@ -185,7 +185,7 @@ func Run(ctx context.Context, config Config) error {
 	_, err = join().Flatten()
 
 	if err != nil && !errors.Is(err, context.Canceled) {
-		return errors.Wrap(err, "fatal error while processing full exits from obol api, please get in contact with the development team as soon as possible, with a full log of the execution!")
+		return errors.Wrap(err, "fatal error while processing full exits from obol api, please get in contact with the development team as soon as possible, with a full log of the execution")
 	}
 
 	log.Info(ctx, "Successfully fetched exit messages!")
@@ -195,12 +195,11 @@ func Run(ctx context.Context, config Config) error {
 
 // fetchFullExit returns true if a full exit was received from the Obol API, and was written in exitFSPath.
 // Each HTTP request has a 10 seconds timeout.
-func fetchFullExit(ctx context.Context, eth2Cl eth2wrap.Client, oApi obolapi.Client, lockHash []byte, validatorPubkey, exitFSPath string, shareIndex int, identityKey *secp256k1.PrivateKey) bool {
+func fetchFullExit(ctx context.Context, eth2Cl eth2wrap.Client, oAPI obolapi.Client, lockHash []byte, validatorPubkey, exitFSPath string, shareIndex int, identityKey *secp256k1.PrivateKey) bool {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
-	fullExit, err := oApi.GetFullExit(ctx, validatorPubkey, lockHash, shareIndex, identityKey)
-
+	fullExit, err := oAPI.GetFullExit(ctx, validatorPubkey, lockHash, shareIndex, identityKey)
 	if err != nil {
 		if !errors.Is(err, obolapi.ErrNoExit) {
 			log.Warn(ctx, "Cannot fetch full exit from obol api, will retry", err)
@@ -252,7 +251,8 @@ func fetchFullExit(ctx context.Context, eth2Cl eth2wrap.Client, oApi obolapi.Cli
 		return false
 	}
 
-	if err := os.WriteFile(exitFSPath, data, 0755); err != nil {
+	//nolint:gosec // must be wide open
+	if err := os.WriteFile(exitFSPath, data, 0o755); err != nil {
 		log.Warn(ctx, "Cannot write exit to filesystem path", err, z.Str("destination_path", exitFSPath))
 		return false
 	}
@@ -260,12 +260,12 @@ func fetchFullExit(ctx context.Context, eth2Cl eth2wrap.Client, oApi obolapi.Cli
 	return true
 }
 
-func postPartialExit(ctx context.Context, oApi obolapi.Client, mutationHash []byte, shareIndex int, identityKey *secp256k1.PrivateKey, exitBlobs ...obolapi.ExitBlob) bool {
+func postPartialExit(ctx context.Context, oAPI obolapi.Client, mutationHash []byte, shareIndex int, identityKey *secp256k1.PrivateKey, exitBlobs ...obolapi.ExitBlob) bool {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
-	// we're retrying every second until we succeeed
-	if err := oApi.PostPartialExit(ctx, mutationHash, shareIndex, identityKey, exitBlobs...); err != nil {
+	// we're retrying every second until we succeed
+	if err := oAPI.PostPartialExit(ctx, mutationHash, shareIndex, identityKey, exitBlobs...); err != nil {
 		log.Error(ctx, "Cannot post exits to obol api", err)
 		return false
 	}
@@ -273,9 +273,9 @@ func postPartialExit(ctx context.Context, oApi obolapi.Client, mutationHash []by
 	return true
 }
 
-// TODO(gsora): check this logic with the team
-func shouldProcessValidator(v *ethApi.Validator) bool {
-	return v.Status == ethApi.ValidatorStateActiveOngoing
+// TODO(gsora): check this logic with the team.
+func shouldProcessValidator(v *eth2v1.Validator) bool {
+	return v.Status == eth2v1.ValidatorStateActiveOngoing
 }
 
 // signExit signs a voluntary exit message for valIdx with the given keyShare.
@@ -324,15 +324,15 @@ func sigDataForExit(ctx context.Context, exit eth2p0.VoluntaryExit, eth2Cl eth2w
 
 // eth2Client initializes an eth2 beacon node API client.
 func eth2Client(ctx context.Context, bnURL string) (eth2wrap.Client, error) {
-	bnHttpClient, err := http.New(ctx,
-		http.WithAddress(bnURL),
-		http.WithLogLevel(1), // zerolog.InfoLevel
+	bnHTTPClient, err := eth2http.New(ctx,
+		eth2http.WithAddress(bnURL),
+		eth2http.WithLogLevel(1), // zerolog.InfoLevel
 	)
-
 	if err != nil {
 		return nil, errors.Wrap(err, "can't connect to beacon node")
 	}
 
-	bnClient := bnHttpClient.(*http.Service)
+	bnClient := bnHTTPClient.(*eth2http.Service)
+
 	return eth2wrap.AdaptEth2HTTP(bnClient, 1*time.Second), nil
 }
