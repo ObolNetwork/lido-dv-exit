@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"os"
 	"strconv"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -291,7 +290,7 @@ func (vsh *validatorStateHandler) getValidator(singleValidatorQuery bool) http.H
 
 			valIDs = append(valIDs, val)
 		} else {
-			valIDs = strings.Split(request.URL.Query().Get("id"), ",")
+			valIDs = request.URL.Query()["id"]
 			if len(valIDs) == 0 {
 				validatorNotFound(writer)
 				return
