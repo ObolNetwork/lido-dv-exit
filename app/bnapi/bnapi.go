@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -294,6 +295,12 @@ func (vsh *validatorStateHandler) getValidator(singleValidatorQuery bool) http.H
 			if len(valIDs) == 0 {
 				validatorNotFound(writer)
 				return
+			}
+
+			if len(valIDs) == 1 && strings.Contains(valIDs[0], ",") { // also handle comma-separated validator IDs
+				commaSeparated := valIDs[0]
+
+				valIDs = strings.Split(commaSeparated, ",")
 			}
 		}
 
