@@ -109,3 +109,52 @@ func TestSignatureToBytes(t *testing.T) {
 		})
 	}
 }
+
+func TestLockHashToBytes(t *testing.T) {
+	tests := []struct {
+		name    string
+		pubkey  string
+		want    []byte
+		wantErr bool
+	}{
+		{
+			"empty input",
+			"",
+			nil,
+			true,
+		},
+		{
+			"not 32 bytes",
+			hex.EncodeToString([]byte{1, 2, 3}),
+			nil,
+			true,
+		},
+		{
+			"32 bytes 0x-prefixed work",
+			"0x" + hex.EncodeToString(bytes.Repeat([]byte{42}, 32)),
+			bytes.Repeat([]byte{42}, 32),
+			false,
+		},
+		{
+			"32 bytes non-0x-prefixed work",
+			hex.EncodeToString(bytes.Repeat([]byte{42}, 32)),
+			bytes.Repeat([]byte{42}, 32),
+			false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := util.LockHashToBytes(tt.pubkey)
+			if tt.wantErr {
+				require.Error(t, err)
+				require.Empty(t, got)
+
+				return
+			}
+
+			require.NoError(t, err)
+			require.Equal(t, tt.want, got)
+		})
+	}
+}
