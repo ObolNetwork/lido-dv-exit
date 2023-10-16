@@ -20,6 +20,8 @@ import (
 	"github.com/obolnetwork/charon/app/log"
 	"github.com/obolnetwork/charon/cluster"
 	"github.com/obolnetwork/charon/eth2util/enr"
+
+	"github.com/ObolNetwork/lido-dv-exit/app/util"
 )
 
 type contextKey string
@@ -167,6 +169,18 @@ func (ts *testServer) HandleFullExit(writer http.ResponseWriter, request *http.R
 		return
 	}
 
+	valPubkeyBytes, err := util.ValidatorPubkeyToBytes(valPubkey)
+	if err != nil {
+		writeErr(writer, http.StatusBadRequest, "invalid public key")
+		return
+	}
+
+	lockHashBytes, err := util.LockHashToBytes(lockHash)
+	if err != nil {
+		writeErr(writer, http.StatusBadRequest, "invalid lock hash")
+		return
+	}
+
 	lock, ok := ts.lockFiles[lockHash]
 	if !ok {
 		writeErr(writer, http.StatusNotFound, "lock not found")
@@ -190,7 +204,19 @@ func (ts *testServer) HandleFullExit(writer http.ResponseWriter, request *http.R
 		return
 	}
 
-	if err := verifyIdentitySignature(lock.Operators[shareIndex-1], authToken, lock.LockHash); err != nil {
+	exitAuthData := FullExitAuthBlob{
+		LockHash:        lockHashBytes,
+		ValidatorPubkey: valPubkeyBytes,
+		ShareIndex:      shareIndex,
+	}
+
+	exitAuthDataRoot, err := exitAuthData.HashTreeRoot()
+	if err != nil {
+		writeErr(writer, http.StatusInternalServerError, "cannot calculate exit auth data root")
+		return
+	}
+
+	if err := verifyIdentitySignature(lock.Operators[shareIndex-1], authToken, exitAuthDataRoot[:]); err != nil {
 		writeErr(writer, http.StatusBadRequest, "cannot verify signature: "+err.Error())
 		return
 	}

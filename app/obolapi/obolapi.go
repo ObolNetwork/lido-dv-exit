@@ -15,7 +15,7 @@ import (
 	"strings"
 
 	eth2p0 "github.com/attestantio/go-eth2-client/spec/phase0"
-	"github.com/decred/dcrd/dcrec/secp256k1/v4"
+	k1 "github.com/decred/dcrd/dcrec/secp256k1/v4"
 	"github.com/decred/dcrd/dcrec/secp256k1/v4/ecdsa"
 	"github.com/obolnetwork/charon/app/errors"
 	"github.com/obolnetwork/charon/app/z"
@@ -66,7 +66,7 @@ type Client struct {
 }
 
 // PostPartialExit POSTs the set of msg's to the Obol API, for a given lock hash.
-func (c Client) PostPartialExit(ctx context.Context, lockHash []byte, shareIndex int, identityKey *secp256k1.PrivateKey, exitBlobs ...ExitBlob) error {
+func (c Client) PostPartialExit(ctx context.Context, lockHash []byte, shareIndex int, identityKey *k1.PrivateKey, exitBlobs ...ExitBlob) error {
 	lockHashStr := "0x" + hex.EncodeToString(lockHash)
 
 	path := partialExitURL(lockHashStr)
@@ -121,7 +121,12 @@ func (c Client) PostPartialExit(ctx context.Context, lockHash []byte, shareIndex
 }
 
 // GetFullExit gets the full exit message for a given validator public key, lock hash and share index.
-func (c Client) GetFullExit(ctx context.Context, valPubkey string, lockHash []byte, shareIndex int, identityKey *secp256k1.PrivateKey) (ExitBlob, error) {
+func (c Client) GetFullExit(ctx context.Context, valPubkey string, lockHash []byte, shareIndex int, identityKey *k1.PrivateKey) (ExitBlob, error) {
+	valPubkeyBytes, err := util.ValidatorPubkeyToBytes(valPubkey)
+	if err != nil {
+		return ExitBlob{}, errors.Wrap(err, "validator pubkey to bytes")
+	}
+
 	path := fullExitURL(valPubkey, "0x"+hex.EncodeToString(lockHash), shareIndex)
 
 	u, err := url.ParseRequestURI(c.ObolAPIUrl)
@@ -136,8 +141,19 @@ func (c Client) GetFullExit(ctx context.Context, valPubkey string, lockHash []by
 		return ExitBlob{}, errors.Wrap(err, "http new get request")
 	}
 
+	exitAuthData := FullExitAuthBlob{
+		LockHash:        lockHash,
+		ValidatorPubkey: valPubkeyBytes,
+		ShareIndex:      shareIndex,
+	}
+
+	exitAuthDataRoot, err := exitAuthData.HashTreeRoot()
+	if err != nil {
+		return ExitBlob{}, errors.Wrap(err, "exit auth data root")
+	}
+
 	// sign the lockHash *bytes* with identity key
-	lockHashSignature := ecdsa.Sign(identityKey, lockHash)
+	lockHashSignature := ecdsa.Sign(identityKey, exitAuthDataRoot[:])
 
 	req.Header.Set("Authorization", bearerString(lockHashSignature.Serialize()))
 	req.Header.Set("Content-Type", "application/json")

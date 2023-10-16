@@ -26,23 +26,34 @@ type UnsignedPartialExitRequest struct {
 }
 
 func (p UnsignedPartialExitRequest) GetTree() (*ssz.Node, error) {
-	return ssz.ProofTree(p)
+	node, err := ssz.ProofTree(p)
+	if err != nil {
+		return nil, errors.Wrap(err, "proof tree")
+	}
+
+	return node, nil
 }
 
 func (p UnsignedPartialExitRequest) HashTreeRoot() ([32]byte, error) {
-	return ssz.HashWithDefaultHasher(p)
+	hash, err := ssz.HashWithDefaultHasher(p)
+	if err != nil {
+		return [32]byte{}, errors.Wrap(err, "hash with default hasher")
+	}
+
+	return hash, nil
 }
 
 func (p UnsignedPartialExitRequest) HashTreeRootWith(hh ssz.HashWalker) error {
 	indx := hh.Index()
 
 	if err := p.PartialExits.HashTreeRootWith(hh); err != nil {
-		return err
+		return errors.Wrap(err, "hash tree root with")
 	}
 
 	hh.PutUint64(uint64(p.ShareIdx))
 
 	hh.Merkleize(indx)
+
 	return nil
 }
 
@@ -50,11 +61,21 @@ func (p UnsignedPartialExitRequest) HashTreeRootWith(hh ssz.HashWalker) error {
 type PartialExits []ExitBlob
 
 func (p PartialExits) GetTree() (*ssz.Node, error) {
-	return ssz.ProofTree(p)
+	hash, err := ssz.ProofTree(p)
+	if err != nil {
+		return nil, errors.Wrap(err, "proof tree")
+	}
+
+	return hash, nil
 }
 
 func (p PartialExits) HashTreeRoot() ([32]byte, error) {
-	return ssz.HashWithDefaultHasher(p)
+	hash, err := ssz.HashWithDefaultHasher(p)
+	if err != nil {
+		return [32]byte{}, errors.Wrap(err, "hash with default hasher")
+	}
+
+	return hash, nil
 }
 
 func (p PartialExits) HashTreeRootWith(hh ssz.HashWalker) error {
@@ -78,11 +99,21 @@ type ExitBlob struct {
 }
 
 func (e ExitBlob) GetTree() (*ssz.Node, error) {
-	return ssz.ProofTree(e)
+	node, err := ssz.ProofTree(e)
+	if err != nil {
+		return nil, errors.Wrap(err, "proof tree")
+	}
+
+	return node, nil
 }
 
 func (e ExitBlob) HashTreeRoot() ([32]byte, error) {
-	return ssz.HashWithDefaultHasher(e)
+	hash, err := ssz.HashWithDefaultHasher(e)
+	if err != nil {
+		return [32]byte{}, errors.Wrap(err, "hash with default hasher")
+	}
+
+	return hash, nil
 }
 
 func (e ExitBlob) HashTreeRootWith(hh ssz.HashWalker) error {
@@ -113,4 +144,41 @@ type FullExitResponse struct {
 	Epoch          string                `json:"epoch"`
 	ValidatorIndex eth2p0.ValidatorIndex `json:"validator_index"`
 	Signatures     []string              `json:"signatures"`
+}
+
+// FullExitAuthBlob represents the data required by Obol API to download the full exit blobs.
+type FullExitAuthBlob struct {
+	LockHash        []byte
+	ValidatorPubkey []byte
+	ShareIndex      int
+}
+
+func (f FullExitAuthBlob) GetTree() (*ssz.Node, error) {
+	node, err := ssz.ProofTree(f)
+	if err != nil {
+		return nil, errors.Wrap(err, "proof tree")
+	}
+
+	return node, nil
+}
+
+func (f FullExitAuthBlob) HashTreeRoot() ([32]byte, error) {
+	hash, err := ssz.HashWithDefaultHasher(f)
+	if err != nil {
+		return [32]byte{}, errors.Wrap(err, "hash with default hasher")
+	}
+
+	return hash, nil
+}
+
+func (f FullExitAuthBlob) HashTreeRootWith(hh ssz.HashWalker) error {
+	indx := hh.Index()
+
+	hh.PutBytes(f.LockHash)
+	hh.PutBytes(f.ValidatorPubkey)
+	hh.PutUint64(uint64(f.ShareIndex))
+
+	hh.Merkleize(indx)
+
+	return nil
 }
