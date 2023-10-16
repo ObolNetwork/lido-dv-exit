@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 
 	eth2p0 "github.com/attestantio/go-eth2-client/spec/phase0"
-	"github.com/decred/dcrd/dcrec/secp256k1/v4"
+	k1 "github.com/decred/dcrd/dcrec/secp256k1/v4"
 	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/obolnetwork/charon/app/errors"
 	"github.com/obolnetwork/charon/app/k1util"
@@ -173,7 +173,7 @@ func ShareIdxForCluster(dir string, cl *manifestpb.Cluster) (int, error) {
 }
 
 // IdentityPrivateKey returns the Charon identity private key.
-func IdentityPrivateKey(dir string) (*secp256k1.PrivateKey, error) {
+func IdentityPrivateKey(dir string) (*k1.PrivateKey, error) {
 	key, err := k1util.Load(filepath.Join(dir, "charon-enr-private-key"))
 	if err != nil {
 		return nil, errors.Wrap(err, "load priv key")

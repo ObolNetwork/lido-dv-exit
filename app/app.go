@@ -12,7 +12,7 @@ import (
 	eth2v1 "github.com/attestantio/go-eth2-client/api/v1"
 	eth2http "github.com/attestantio/go-eth2-client/http"
 	eth2p0 "github.com/attestantio/go-eth2-client/spec/phase0"
-	"github.com/decred/dcrd/dcrec/secp256k1/v4"
+	k1 "github.com/decred/dcrd/dcrec/secp256k1/v4"
 	"github.com/obolnetwork/charon/app/errors"
 	"github.com/obolnetwork/charon/app/eth2wrap"
 	"github.com/obolnetwork/charon/app/forkjoin"
@@ -153,7 +153,7 @@ func Run(ctx context.Context, config Config) error {
 		lockHash        []byte
 		validatorPubkey string
 		shareIndex      int
-		identityKey     *secp256k1.PrivateKey
+		identityKey     *k1.PrivateKey
 	}
 
 	fork, join, fjcancel := forkjoin.New(ctx, func(ctx context.Context, data fetchExitData) (struct{}, error) {
@@ -195,7 +195,7 @@ func Run(ctx context.Context, config Config) error {
 
 // fetchFullExit returns true if a full exit was received from the Obol API, and was written in exitFSPath.
 // Each HTTP request has a 10 seconds timeout.
-func fetchFullExit(ctx context.Context, eth2Cl eth2wrap.Client, oAPI obolapi.Client, lockHash []byte, validatorPubkey, exitFSPath string, shareIndex int, identityKey *secp256k1.PrivateKey) bool {
+func fetchFullExit(ctx context.Context, eth2Cl eth2wrap.Client, oAPI obolapi.Client, lockHash []byte, validatorPubkey, exitFSPath string, shareIndex int, identityKey *k1.PrivateKey) bool {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
@@ -260,7 +260,7 @@ func fetchFullExit(ctx context.Context, eth2Cl eth2wrap.Client, oAPI obolapi.Cli
 	return true
 }
 
-func postPartialExit(ctx context.Context, oAPI obolapi.Client, mutationHash []byte, shareIndex int, identityKey *secp256k1.PrivateKey, exitBlobs ...obolapi.ExitBlob) bool {
+func postPartialExit(ctx context.Context, oAPI obolapi.Client, mutationHash []byte, shareIndex int, identityKey *k1.PrivateKey, exitBlobs ...obolapi.ExitBlob) bool {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
