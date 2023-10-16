@@ -38,6 +38,7 @@ const (
 
 var ErrNoExit = errors.New("no exit for the given validator public key")
 
+// partialExitURL returns the partial exit Obol API URL for a given lock hash.
 func partialExitURL(lockHash string) string {
 	return strings.NewReplacer(
 		lockHashPath,
@@ -45,11 +46,12 @@ func partialExitURL(lockHash string) string {
 	).Replace(partialExitTmpl)
 }
 
+// bearerString returns the bearer token authentication string given a token.
 func bearerString(data []byte) string {
 	return fmt.Sprintf("Bearer %s", base64.StdEncoding.EncodeToString(data))
 }
 
-// TODO(gsora): validate public key.
+// fullExitURL returns the full exit Obol API URL for a given validator public key.
 func fullExitURL(valPubkey, lockHash string, shareIndex int) string {
 	return strings.NewReplacer(
 		valPubkeyPath,

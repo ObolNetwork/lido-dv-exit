@@ -4,6 +4,7 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -30,20 +31,12 @@ import (
 
 // Config is the lido-dv-exit CLI configuration flag value holder.
 type Config struct {
-	Log log.Config
-
-	// TODO: check that's a real URL
-	BeaconNodeURL string
-
-	// TODO: check if the directory exists and that is writable.
-	EjectorExitPath string
-
-	// TODO: check that the directory exists, keystore.LoadManifest will check the format is appropriate.
+	Log              log.Config
+	BeaconNodeURL    string
+	EjectorExitPath  string
 	CharonRuntimeDir string
-
-	ExitEpoch uint64
-
-	ObolAPIURL string
+	ExitEpoch        uint64
+	ObolAPIURL       string
 }
 
 // Run runs the lido-dv-exit core logic.
@@ -75,6 +68,11 @@ func Run(ctx context.Context, config Config) error {
 		return errors.Wrap(err, "keystore load error")
 	}
 
+	existingValIndices, err := loadExistingValidatorExits(config.EjectorExitPath)
+	if err != nil {
+		return err
+	}
+
 	// TODO(gsora): cross-check the lido-ejector exits already present with valsKeys, so that we don't
 	// re-process what's already been processed.
 
@@ -83,7 +81,6 @@ func Run(ctx context.Context, config Config) error {
 		return errors.Wrap(err, "can't connect to beacon node")
 	}
 
-	// TODO(gsora): check obol api url, see if correct
 	oAPI := obolapi.Client{ObolAPIUrl: config.ObolAPIURL}
 
 	tick := time.NewTicker(1 * time.Second)
@@ -100,8 +97,7 @@ func Run(ctx context.Context, config Config) error {
 			return errors.Wrap(err, "validator keys to phase0")
 		}
 
-		// TODO(gsora): calling with finalized here, need to understand what's better
-		valIndices, err := bnClient.ValidatorsByPubKey(ctx, bnapi.StateIDFinalized.String(), phase0Vals)
+		valIndices, err := bnClient.ValidatorsByPubKey(ctx, bnapi.StateIDHead.String(), phase0Vals)
 		if err != nil {
 			log.Error(ctx, "Cannot fetch validator state", err)
 			continue
@@ -111,6 +107,15 @@ func Run(ctx context.Context, config Config) error {
 			validatorPubkStr := val.Validator.PublicKey.String()
 
 			ctx := log.WithCtx(ctx, z.Str("validator", validatorPubkStr))
+
+			if _, ok := existingValIndices[valIndex]; ok {
+				// we already have an exit for this validator, remove it from the list and don't
+				// process it
+				log.Debug(ctx, "Validator already has an exit")
+				delete(valsKeys, keystore.ValidatorPubkey(validatorPubkStr))
+
+				continue
+			}
 
 			if !shouldProcessValidator(val) {
 				log.Debug(ctx, "Not processing validator", z.Str("state", val.Status.String()))
@@ -273,7 +278,8 @@ func postPartialExit(ctx context.Context, oAPI obolapi.Client, mutationHash []by
 	return true
 }
 
-// TODO(gsora): check this logic with the team.
+// shouldProcessValidator returns true if a validator needs to be processed, meaning a full exit message must
+// be created.
 func shouldProcessValidator(v *eth2v1.Validator) bool {
 	return v.Status == eth2v1.ValidatorStateActiveOngoing
 }
@@ -335,4 +341,34 @@ func eth2Client(ctx context.Context, bnURL string) (eth2wrap.Client, error) {
 	bnClient := bnHTTPClient.(*eth2http.Service)
 
 	return eth2wrap.AdaptEth2HTTP(bnClient, 1*time.Second), nil
+}
+
+// loadExistingValidatorExits reads the indices for validators whose exits have been already processed.
+func loadExistingValidatorExits(ejectorPath string) (map[eth2p0.ValidatorIndex]struct{}, error) {
+	exitPaths, err := filepath.Glob(filepath.Join(ejectorPath, "*.json"))
+	if err != nil {
+		return nil, errors.Wrap(err, "ejector exits glob")
+	}
+
+	ret := map[eth2p0.ValidatorIndex]struct{}{}
+
+	if len(exitPaths) == 0 {
+		return ret, nil
+	}
+
+	for _, ep := range exitPaths {
+		exitBytes, err := os.ReadFile(ep)
+		if err != nil {
+			return nil, errors.Wrap(err, "read exit file", z.Str("path", ep))
+		}
+
+		var exit eth2p0.SignedVoluntaryExit
+		if err := json.Unmarshal(exitBytes, &exit); err != nil {
+			return nil, errors.Wrap(err, "exit file unmarshal", z.Str("path", ep))
+		}
+
+		ret[exit.Message.ValidatorIndex] = struct{}{}
+	}
+
+	return ret, nil
 }
