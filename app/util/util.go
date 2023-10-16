@@ -16,6 +16,9 @@ const (
 
 	// signatureBytesLen is the amount of bytes a well-formed validator signature must contain.
 	signatureBytesLen = 96
+
+	// lockHashLen is the amount of bytes a well-formed lock hash must contain.
+	lockHashLen = 32
 )
 
 // from0x decodes hex-encoded data and expects it to be exactly of len(length).
@@ -49,4 +52,10 @@ func ValidatorPubkeyToBytes(pubkey string) ([]byte, error) {
 // If signature is empty, contains badly-formatted hex data or doesn't yield exactly 96 bytes, this function will error.
 func SignatureToBytes(signature string) ([]byte, error) {
 	return from0x(signature, signatureBytesLen)
+}
+
+// LockHashToBytes returns the bytes representation of the hex-encoded lock hash string passed in input.
+// If lockHash is empty, contains badly-formatted hex data or doesn't yield exactly 32 bytes, this function will error.
+func LockHashToBytes(lockHash string) ([]byte, error) {
+	return from0x(lockHash, lockHashLen)
 }
