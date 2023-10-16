@@ -78,11 +78,10 @@ func (c Client) PostPartialExit(ctx context.Context, lockHash []byte, shareIndex
 
 	u.Path = path
 
-	var msg UnsignedPartialExitRequest
-
-	msg.ShareIdx = shareIndex
-
-	msg.PartialExits = append(msg.PartialExits, exitBlobs...)
+	msg := unsignedPartialExitRequest{
+		ShareIdx:     shareIndex,
+		PartialExits: exitBlobs,
+	}
 
 	peroot, err := msg.HashTreeRoot()
 	if err != nil {
@@ -91,8 +90,8 @@ func (c Client) PostPartialExit(ctx context.Context, lockHash []byte, shareIndex
 
 	signature := ecdsa.Sign(identityKey, peroot[:]).Serialize()
 
-	data, err := json.Marshal(PartialExitRequest{
-		UnsignedPartialExitRequest: msg,
+	data, err := json.Marshal(partialExitRequest{
+		unsignedPartialExitRequest: msg,
 		Signature:                  signature,
 	})
 	if err != nil {
@@ -141,7 +140,7 @@ func (c Client) GetFullExit(ctx context.Context, valPubkey string, lockHash []by
 		return ExitBlob{}, errors.Wrap(err, "http new get request")
 	}
 
-	exitAuthData := FullExitAuthBlob{
+	exitAuthData := fullExitAuthBlob{
 		LockHash:        lockHash,
 		ValidatorPubkey: valPubkeyBytes,
 		ShareIndex:      shareIndex,
@@ -175,7 +174,7 @@ func (c Client) GetFullExit(ctx context.Context, valPubkey string, lockHash []by
 		_ = resp.Body.Close()
 	}()
 
-	var er FullExitResponse
+	var er fullExitResponse
 	if err := json.NewDecoder(resp.Body).Decode(&er); err != nil {
 		return ExitBlob{}, errors.Wrap(err, "json unmarshal error")
 	}

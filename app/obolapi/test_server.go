@@ -77,7 +77,7 @@ func (ts *testServer) HandlePartialExit(writer http.ResponseWriter, request *htt
 
 	vars := mux.Vars(request)
 
-	var data PartialExitRequest
+	var data partialExitRequest
 
 	if err := json.NewDecoder(request.Body).Decode(&data); err != nil {
 		writeErr(writer, http.StatusBadRequest, "invalid body")
@@ -204,7 +204,7 @@ func (ts *testServer) HandleFullExit(writer http.ResponseWriter, request *http.R
 		return
 	}
 
-	exitAuthData := FullExitAuthBlob{
+	exitAuthData := fullExitAuthBlob{
 		LockHash:        lockHashBytes,
 		ValidatorPubkey: valPubkeyBytes,
 		ShareIndex:      shareIndex,
@@ -221,7 +221,7 @@ func (ts *testServer) HandleFullExit(writer http.ResponseWriter, request *http.R
 		return
 	}
 
-	var ret FullExitResponse
+	var ret fullExitResponse
 
 	// order partial exits by share index
 	sort.Slice(partialExits, func(i, j int) bool {
