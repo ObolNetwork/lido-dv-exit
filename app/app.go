@@ -111,7 +111,7 @@ func Run(ctx context.Context, config Config) error {
 			if _, ok := existingValIndices[valIndex]; ok {
 				// we already have an exit for this validator, remove it from the list and don't
 				// process it
-				log.Debug(ctx, "Validator already has an exit")
+				log.Debug(ctx, "Validator already has an exit", z.Str("validx", valIndex))
 				delete(valsKeys, keystore.ValidatorPubkey(validatorPubkStr))
 
 				continue
@@ -364,7 +364,7 @@ func loadExistingValidatorExits(ejectorPath string) (map[eth2p0.ValidatorIndex]s
 
 		var exit eth2p0.SignedVoluntaryExit
 		if err := json.Unmarshal(exitBytes, &exit); err != nil {
-			return nil, errors.Wrap(err, "exit file unmarshal", z.Str("path", ep))
+			return nil, errors.Wrap(err, "unmarshal exit file", z.Str("path", ep))
 		}
 
 		ret[exit.Message.ValidatorIndex] = struct{}{}
