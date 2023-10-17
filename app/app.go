@@ -111,7 +111,7 @@ func Run(ctx context.Context, config Config) error {
 			if _, ok := existingValIndices[valIndex]; ok {
 				// we already have an exit for this validator, remove it from the list and don't
 				// process it
-				log.Debug(ctx, "Validator already has an exit", z.Str("validx", valIndex))
+				log.Debug(ctx, "Validator already has an exit", z.U64("validx", uint64(valIndex)))
 				delete(valsKeys, keystore.ValidatorPubkey(validatorPubkStr))
 
 				continue
