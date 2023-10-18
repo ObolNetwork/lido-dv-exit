@@ -3,6 +3,9 @@
 package obolapi
 
 import (
+	"encoding/json"
+	"fmt"
+
 	eth2p0 "github.com/attestantio/go-eth2-client/spec/phase0"
 	ssz "github.com/ferranbt/fastssz"
 	"github.com/obolnetwork/charon/app/errors"
@@ -16,6 +19,42 @@ import (
 type partialExitRequest struct {
 	unsignedPartialExitRequest
 	Signature []byte `json:"signature"`
+}
+
+// partialExitRequestDTO is partialExitRequest, but for serialization on the wire.
+type partialExitRequestDTO struct {
+	unsignedPartialExitRequest
+	Signature string `json:"signature"`
+}
+
+func (p *partialExitRequest) UnmarshalJSON(bytes []byte) error {
+	var dto partialExitRequestDTO
+
+	if err := json.Unmarshal(bytes, &dto); err != nil {
+		//nolint: wrapcheck // caller will wrap this error
+		return err
+	}
+
+	sigBytes, err := util.K1SignatureToBytes(dto.Signature)
+	if err != nil {
+		//nolint: wrapcheck // caller will wrap this error
+		return err
+	}
+
+	p.unsignedPartialExitRequest = dto.unsignedPartialExitRequest
+	p.Signature = sigBytes
+
+	return nil
+}
+
+func (p partialExitRequest) MarshalJSON() ([]byte, error) {
+	dto := partialExitRequestDTO{
+		unsignedPartialExitRequest: p.unsignedPartialExitRequest,
+		Signature:                  fmt.Sprintf("%#x", p.Signature),
+	}
+
+	//nolint: wrapcheck // caller will wrap this error
+	return json.Marshal(dto)
 }
 
 // unsignedPartialExitRequest represents an unsigned blob of data sent to the Obol API server, which is stored in the backend awaiting

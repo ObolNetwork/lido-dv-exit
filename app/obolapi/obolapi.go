@@ -5,7 +5,6 @@ package obolapi
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -48,7 +47,7 @@ func partialExitURL(lockHash string) string {
 
 // bearerString returns the bearer token authentication string given a token.
 func bearerString(data []byte) string {
-	return fmt.Sprintf("Bearer %s", base64.StdEncoding.EncodeToString(data))
+	return fmt.Sprintf("Bearer %#x", data)
 }
 
 // fullExitURL returns the full exit Obol API URL for a given validator public key.

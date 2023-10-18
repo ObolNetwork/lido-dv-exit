@@ -19,6 +19,9 @@ const (
 
 	// lockHashLen is the amount of bytes a well-formed lock hash must contain.
 	lockHashLen = 32
+
+	// k1SignatureLen is the amount of bytes a well-formed K1 signature must contain.
+	k1SignatureLen = 65
 )
 
 // from0x decodes hex-encoded data and expects it to be exactly of len(length).
@@ -58,4 +61,10 @@ func SignatureToBytes(signature string) ([]byte, error) {
 // If lockHash is empty, contains badly-formatted hex data or doesn't yield exactly 32 bytes, this function will error.
 func LockHashToBytes(lockHash string) ([]byte, error) {
 	return from0x(lockHash, lockHashLen)
+}
+
+// K1SignatureToBytes returns the bytes representation of the hex-encoded K1 signature string passed in input.
+// If signature is empty, contains badly-formatted hex data or doesn't yield exactly 32 bytes, this function will error.
+func K1SignatureToBytes(signature string) ([]byte, error) {
+	return from0x(signature, k1SignatureLen)
 }
