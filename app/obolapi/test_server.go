@@ -4,7 +4,6 @@ package obolapi
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"net/http"
@@ -328,9 +327,9 @@ func authMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
-		bearerBytes, err := base64.StdEncoding.DecodeString(bearer)
+		bearerBytes, err := util.K1SignatureToBytes(bearer)
 		if err != nil {
-			writeErr(w, http.StatusBadRequest, "bearer token must be base64-encoded")
+			writeErr(w, http.StatusBadRequest, "bearer token must be hex-encoded")
 			return
 		}
 

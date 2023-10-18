@@ -158,3 +158,52 @@ func TestLockHashToBytes(t *testing.T) {
 		})
 	}
 }
+
+func TestK1SignatureToBytes(t *testing.T) {
+	tests := []struct {
+		name    string
+		pubkey  string
+		want    []byte
+		wantErr bool
+	}{
+		{
+			"empty input",
+			"",
+			nil,
+			true,
+		},
+		{
+			"not 65 bytes",
+			hex.EncodeToString([]byte{1, 2, 3}),
+			nil,
+			true,
+		},
+		{
+			"65 bytes 0x-prefixed work",
+			"0x" + hex.EncodeToString(bytes.Repeat([]byte{42}, 65)),
+			bytes.Repeat([]byte{42}, 65),
+			false,
+		},
+		{
+			"65 bytes non-0x-prefixed work",
+			hex.EncodeToString(bytes.Repeat([]byte{42}, 65)),
+			bytes.Repeat([]byte{42}, 65),
+			false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := util.K1SignatureToBytes(tt.pubkey)
+			if tt.wantErr {
+				require.Error(t, err)
+				require.Empty(t, got)
+
+				return
+			}
+
+			require.NoError(t, err)
+			require.Equal(t, tt.want, got)
+		})
+	}
+}
