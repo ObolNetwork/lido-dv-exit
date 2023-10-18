@@ -369,8 +369,8 @@ github.com/multiformats/go-varint v0.0.7 h1:sWSGR+f/eu5ABZA2ZpYKBILXTTs9JWpdEM/n
 github.com/multiformats/go-varint v0.0.7/go.mod h1:r8PUYw/fD/SjBCiKOoDlGF6QawOELpZAu9eioSos/OU=
 github.com/neelance/astrewrite v0.0.0-20160511093645-99348263ae86/go.mod h1:kHJEU3ofeGjhHklVoIGuVj85JJwZ6kWPaJwCIxgnFmo=
 github.com/neelance/sourcemap v0.0.0-20151028013722-8c68805598ab/go.mod h1:Qr6/a/Q4r9LP1IltGz7tA7iOK1WonHEYhu1HRBA7ZiM=
-github.com/obolnetwork/charon v0.17.0 h1:P/PPB/DInD1iVXkCqiUqV2MXuRdhp978UXS4iYFU6rw=
-github.com/obolnetwork/charon v0.17.0/go.mod h1:kY1LST7faFGP+6Xkd3TIMQiM6UmVbT2R+xqx5JcQO9A=
+github.com/obolnetwork/charon v0.17.1 h1:6FK6o3h28uUzgpF03NUeTxHUEkPe8LkU64Eb/GXCsNU=
+github.com/obolnetwork/charon v0.17.1/go.mod h1:YZMuTog+iwj3Ril0oK6EUwEYsOPdOR7iYuLRZybrTAo=
 github.com/onsi/ginkgo/v2 v2.11.0 h1:WgqUCUt/lT6yXoQ8Wef0fsNn5cAuMK7+KT9UFRz2tcU=
 github.com/onsi/ginkgo/v2 v2.11.0/go.mod h1:ZhrRA5XmEE3x3rhlzamx/JJvujdZoJ2uvgI7kR0iZvM=
 github.com/onsi/gomega v1.27.8 h1:gegWiwZjBsf2DgiSbf5hpokZ98JVDMcWkUiigk6/KXc=
