@@ -16,8 +16,8 @@ import (
 
 	eth2p0 "github.com/attestantio/go-eth2-client/spec/phase0"
 	k1 "github.com/decred/dcrd/dcrec/secp256k1/v4"
-	"github.com/decred/dcrd/dcrec/secp256k1/v4/ecdsa"
 	"github.com/obolnetwork/charon/app/errors"
+	"github.com/obolnetwork/charon/app/k1util"
 	"github.com/obolnetwork/charon/app/z"
 	"github.com/obolnetwork/charon/tbls"
 	"github.com/obolnetwork/charon/tbls/tblsconv"
@@ -90,7 +90,10 @@ func (c Client) PostPartialExit(ctx context.Context, lockHash []byte, shareIndex
 		return errors.Wrap(err, "partial exits hash tree root")
 	}
 
-	signature := ecdsa.Sign(identityKey, peroot[:]).Serialize()
+	signature, err := k1util.Sign(identityKey, peroot[:])
+	if err != nil {
+		return errors.Wrap(err, "k1 sign")
+	}
 
 	data, err := json.Marshal(partialExitRequest{
 		unsignedPartialExitRequest: msg,
@@ -154,9 +157,12 @@ func (c Client) GetFullExit(ctx context.Context, valPubkey string, lockHash []by
 	}
 
 	// sign the lockHash *bytes* with identity key
-	lockHashSignature := ecdsa.Sign(identityKey, exitAuthDataRoot[:])
+	lockHashSignature, err := k1util.Sign(identityKey, exitAuthDataRoot[:])
+	if err != nil {
+		return ExitBlob{}, errors.Wrap(err, "k1 sign")
+	}
 
-	req.Header.Set("Authorization", bearerString(lockHashSignature.Serialize()))
+	req.Header.Set("Authorization", bearerString(lockHashSignature))
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := http.DefaultClient.Do(req)
