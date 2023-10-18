@@ -134,9 +134,8 @@ func (ts *testServer) HandlePartialExit(writer http.ResponseWriter, request *htt
 			return
 		}
 
-		if len(ts.partialExits[exit.PublicKey])+1 > len(lock.Operators) { // we're already at threshold
-			writeErr(writer, http.StatusBadRequest, "already at threshold for selected validator")
-			return
+		if len(ts.partialExits[exit.PublicKey])+1 > len(lock.Operators) { // we're already at threshold, ignore
+			continue
 		}
 
 		ts.partialExits[exit.PublicKey] = append(ts.partialExits[exit.PublicKey], exitBlob{
