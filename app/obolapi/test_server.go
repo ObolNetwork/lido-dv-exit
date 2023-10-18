@@ -14,9 +14,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/decred/dcrd/dcrec/secp256k1/v4/ecdsa"
 	"github.com/gorilla/mux"
 	"github.com/obolnetwork/charon/app/errors"
+	"github.com/obolnetwork/charon/app/k1util"
 	"github.com/obolnetwork/charon/app/log"
 	"github.com/obolnetwork/charon/cluster"
 	"github.com/obolnetwork/charon/eth2util/enr"
@@ -254,12 +254,12 @@ func verifyIdentitySignature(operator cluster.Operator, sig, hash []byte) error 
 		return errors.Wrap(err, "operator enr")
 	}
 
-	signature, err := ecdsa.ParseDERSignature(sig)
+	verified, err := k1util.Verify65(opENR.PubKey, hash, sig)
 	if err != nil {
-		return errors.Wrap(err, "read signature")
+		return errors.Wrap(err, "k1 signature verify")
 	}
 
-	if !signature.Verify(hash, opENR.PubKey) {
+	if !verified {
 		return errors.New("identity signature verification failed")
 	}
 
