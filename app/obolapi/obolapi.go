@@ -85,12 +85,12 @@ func (c Client) PostPartialExit(ctx context.Context, lockHash []byte, shareIndex
 		PartialExits: exitBlobs,
 	}
 
-	peroot, err := msg.HashTreeRoot()
+	msgRoot, err := msg.HashTreeRoot()
 	if err != nil {
 		return errors.Wrap(err, "partial exits hash tree root")
 	}
 
-	signature, err := k1util.Sign(identityKey, peroot[:])
+	signature, err := k1util.Sign(identityKey, msgRoot[:])
 	if err != nil {
 		return errors.Wrap(err, "k1 sign")
 	}
