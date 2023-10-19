@@ -87,7 +87,7 @@ func newMockServersCmd(
 
 		userProvidedValAmt := len(bcc.Validators)
 
-		cl, _, err := keystore.LoadManifest(filepath.Dir(bcc.LockFilePath))
+		cl, err := keystore.LoadClusterLock(filepath.Dir(bcc.LockFilePath))
 		if err != nil {
 			return errors.Wrap(err, "lockfile load error")
 		}

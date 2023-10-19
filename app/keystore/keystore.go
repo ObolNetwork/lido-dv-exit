@@ -72,8 +72,8 @@ func (vs ValidatorShares) ValidatorsPhase0() ([]eth2p0.BLSPubKey, error) {
 	return ret, nil
 }
 
-// clusterFile returns the *manifestpb.Cluster file contained in dir.
-func clusterFile(dir string) (*manifestpb.Cluster, error) {
+// LoadClusterLock returns the *manifestpb.Cluster file contained in dir.
+func LoadClusterLock(dir string) (*manifestpb.Cluster, error) {
 	// try opening the lock file
 	lockFile := filepath.Join(dir, "cluster-lock.json")
 	manifestFile := filepath.Join(dir, "cluster-manifest.pb")
@@ -98,7 +98,7 @@ func LoadManifest(dir string) (*manifestpb.Cluster, []tbls.PrivateKey, error) {
 		return nil, nil, errors.Wrap(err, "can't read directory")
 	}
 
-	cl, err := clusterFile(dir)
+	cl, err := LoadClusterLock(dir)
 	if err != nil {
 		return nil, nil, err
 	}
