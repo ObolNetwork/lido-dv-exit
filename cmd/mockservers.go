@@ -5,8 +5,10 @@ package cmd
 import (
 	"context"
 	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"os"
+	"path/filepath"
 
 	eth2v1 "github.com/attestantio/go-eth2-client/api/v1"
 	eth2p0 "github.com/attestantio/go-eth2-client/spec/phase0"
@@ -16,6 +18,7 @@ import (
 	"github.com/spf13/cobra"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/ObolNetwork/lido-dv-exit/app/keystore"
 	"github.com/ObolNetwork/lido-dv-exit/app/util"
 )
 
@@ -71,6 +74,32 @@ func newMockServersCmd(
 				Status:  eth2v1.ValidatorStateActiveOngoing,
 				Validator: &eth2p0.Validator{
 					PublicKey:                  valPubk,
+					WithdrawalCredentials:      rand32(),
+					EffectiveBalance:           42,
+					Slashed:                    false,
+					ActivationEligibilityEpoch: 42,
+					ActivationEpoch:            42,
+					ExitEpoch:                  18446744073709551615,
+					WithdrawableEpoch:          42,
+				},
+			}
+		}
+
+		userProvidedValAmt := len(bcc.Validators)
+
+		cl, _, err := keystore.LoadManifest(filepath.Dir(bcc.LockFilePath))
+		if err != nil {
+			return errors.Wrap(err, "lockfile load error")
+		}
+
+		for idx, lockValidator := range cl.Validators {
+			valPubk := "0x" + hex.EncodeToString(lockValidator.PublicKey)
+			bcc.Validators[valPubk] = eth2v1.Validator{
+				Index:   eth2p0.ValidatorIndex(idx + userProvidedValAmt + 1),
+				Balance: 42,
+				Status:  eth2v1.ValidatorStateActiveOngoing,
+				Validator: &eth2p0.Validator{
+					PublicKey:                  eth2p0.BLSPubKey(lockValidator.PublicKey),
 					WithdrawalCredentials:      rand32(),
 					EffectiveBalance:           42,
 					Slashed:                    false,
