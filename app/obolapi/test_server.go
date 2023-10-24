@@ -46,7 +46,7 @@ func writeErr(wr http.ResponseWriter, status int, msg string) {
 // exitBlob represents an Obol API ExitBlob with its share index.
 type exitBlob struct {
 	ExitBlob
-	shareIdx int
+	shareIdx uint64
 }
 
 // testServer is a mock implementation (but that actually does cryptography) of the Obol API side,
@@ -96,7 +96,7 @@ func (ts *testServer) HandlePartialExit(writer http.ResponseWriter, request *htt
 	}
 
 	// check that data has been signed with ShareIdx-th identity key
-	if data.ShareIdx == 0 || data.ShareIdx > len(lock.Operators) {
+	if data.ShareIdx == 0 || data.ShareIdx > uint64(len(lock.Operators)) {
 		writeErr(writer, http.StatusBadRequest, "invalid share index")
 		return
 	}
@@ -161,7 +161,7 @@ func (ts *testServer) HandleFullExit(writer http.ResponseWriter, request *http.R
 	valPubkey := vars[cleanTmpl(valPubkeyPath)]
 	lockHash := vars[cleanTmpl(lockHashPath)]
 	shareIndexStr := vars[cleanTmpl(shareIndexPath)]
-	shareIndex, err := strconv.Atoi(shareIndexStr)
+	shareIndex, err := strconv.ParseUint(shareIndexStr, 10, 64)
 	if err != nil {
 		writeErr(writer, http.StatusBadRequest, "malformed share index")
 		return
@@ -197,7 +197,7 @@ func (ts *testServer) HandleFullExit(writer http.ResponseWriter, request *http.R
 	}
 
 	// check that data has been signed with ShareIdx-th identity key
-	if shareIndex == 0 || shareIndex > len(lock.Operators) {
+	if shareIndex == 0 || shareIndex > uint64(len(lock.Operators)) {
 		writeErr(writer, http.StatusBadRequest, "invalid share index")
 		return
 	}
