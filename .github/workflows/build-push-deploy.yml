@@ -25,7 +25,6 @@ jobs:
       with:
         images: |
           obolnetwork/lido-dv-exit
-          ghcr.io/obolnetwork/lido-dv-exit
         tags: |
           # Tag "git short sha" on all git events
           type=sha,prefix=
@@ -38,13 +37,6 @@ jobs:
 
           # Tag "tag ref" on git-tag events
           type=ref,event=tag
-
-    - name: Login to Github container registry
-      uses: docker/login-action@v2
-      with:
-        registry: ghcr.io
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Login to Dockerhub container registry
       uses: docker/login-action@v2
@@ -60,7 +52,7 @@ jobs:
       with:
         context: .
         platforms: linux/amd64,linux/arm64
-        push: false # don't push images to docker hub for now
+        push: true
         build-args: |
           GITHUB_SHA=${{ github.sha }}
           GO_BUILD_FLAG=${{ env.GO_BUILD_FLAG }}
