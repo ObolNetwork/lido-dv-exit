@@ -3,7 +3,7 @@ module github.com/ObolNetwork/lido-dv-exit
 go 1.20
 
 require (
-	github.com/attestantio/go-eth2-client v0.18.3
+	github.com/attestantio/go-eth2-client v0.19.0
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.2.0
 	github.com/ferranbt/fastssz v0.1.3
 	github.com/gorilla/handlers v1.5.1
@@ -50,6 +50,7 @@ require (
 	github.com/hashicorp/hcl v1.0.0 // indirect
 	github.com/herumi/bls-eth-go-binary v1.31.0 // indirect
 	github.com/holiman/uint256 v1.2.2 // indirect
+	github.com/huandu/go-clone v1.6.0 // indirect
 	github.com/huin/goupnp v1.2.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/ipfs/go-cid v0.4.1 // indirect
