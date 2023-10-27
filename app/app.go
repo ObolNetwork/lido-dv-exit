@@ -59,7 +59,7 @@ func Run(ctx context.Context, config Config) error {
 		return errors.Wrap(err, "identity key loading")
 	}
 
-	ctx = log.WithCtx(ctx, z.Int("share_idx", shareIdx))
+	ctx = log.WithCtx(ctx, z.U64("share_idx", shareIdx))
 
 	log.Info(ctx, "Lido-dv-exit starting")
 
@@ -157,7 +157,7 @@ func Run(ctx context.Context, config Config) error {
 	type fetchExitData struct {
 		lockHash        []byte
 		validatorPubkey string
-		shareIndex      int
+		shareIndex      uint64
 		identityKey     *k1.PrivateKey
 	}
 
@@ -200,7 +200,7 @@ func Run(ctx context.Context, config Config) error {
 
 // fetchFullExit returns true if a full exit was received from the Obol API, and was written in exitFSPath.
 // Each HTTP request has a 10 seconds timeout.
-func fetchFullExit(ctx context.Context, eth2Cl eth2wrap.Client, oAPI obolapi.Client, lockHash []byte, validatorPubkey, exitFSPath string, shareIndex int, identityKey *k1.PrivateKey) bool {
+func fetchFullExit(ctx context.Context, eth2Cl eth2wrap.Client, oAPI obolapi.Client, lockHash []byte, validatorPubkey, exitFSPath string, shareIndex uint64, identityKey *k1.PrivateKey) bool {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
@@ -265,7 +265,7 @@ func fetchFullExit(ctx context.Context, eth2Cl eth2wrap.Client, oAPI obolapi.Cli
 	return true
 }
 
-func postPartialExit(ctx context.Context, oAPI obolapi.Client, mutationHash []byte, shareIndex int, identityKey *k1.PrivateKey, exitBlobs ...obolapi.ExitBlob) bool {
+func postPartialExit(ctx context.Context, oAPI obolapi.Client, mutationHash []byte, shareIndex uint64, identityKey *k1.PrivateKey, exitBlobs ...obolapi.ExitBlob) bool {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 

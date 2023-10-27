@@ -138,7 +138,7 @@ func loadIdentityKey(dir string) (enr.Record, error) {
 }
 
 // ShareIdxForCluster returns the share index for the Charon cluster's ENR identity key, given a *manifestpb.Cluster.
-func ShareIdxForCluster(dir string, cl *manifestpb.Cluster) (int, error) {
+func ShareIdxForCluster(dir string, cl *manifestpb.Cluster) (uint64, error) {
 	pids, err := manifest.ClusterPeerIDs(cl)
 	if err != nil {
 		return 0, errors.Wrap(err, "cluster peer ids")
@@ -169,7 +169,7 @@ func ShareIdxForCluster(dir string, cl *manifestpb.Cluster) (int, error) {
 		return 0, errors.New("node index for loaded enr not found in cluster lock")
 	}
 
-	return shareIdx, nil
+	return uint64(shareIdx), nil
 }
 
 // IdentityPrivateKey returns the Charon identity private key.

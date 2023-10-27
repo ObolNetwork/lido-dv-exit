@@ -9,8 +9,17 @@ import (
 	eth2p0 "github.com/attestantio/go-eth2-client/spec/phase0"
 	ssz "github.com/ferranbt/fastssz"
 	"github.com/obolnetwork/charon/app/errors"
+	"github.com/obolnetwork/charon/app/z"
 
 	"github.com/ObolNetwork/lido-dv-exit/app/util"
+)
+
+const (
+	// sszMaxExits is the maximum amount of exit messages in an array.
+	sszMaxExits = 65536
+
+	// sszLenPubKey is the length of a BLS validator public key
+	sszLenPubKey = 48
 )
 
 // partialExitRequest represents the blob of data sent to the Obol API server, which is stored in the backend awaiting
@@ -61,7 +70,7 @@ func (p partialExitRequest) MarshalJSON() ([]byte, error) {
 // aggregation.
 type unsignedPartialExitRequest struct {
 	PartialExits partialExits `json:"partial_exits"`
-	ShareIdx     int          `json:"share_idx,omitempty"`
+	ShareIdx     uint64       `json:"share_idx,omitempty"`
 }
 
 func (p unsignedPartialExitRequest) GetTree() (*ssz.Node, error) {
@@ -89,7 +98,7 @@ func (p unsignedPartialExitRequest) HashTreeRootWith(hh ssz.HashWalker) error {
 		return errors.Wrap(err, "hash tree root with")
 	}
 
-	hh.PutUint64(uint64(p.ShareIdx))
+	hh.PutUint64(p.ShareIdx)
 
 	hh.Merkleize(indx)
 
@@ -120,13 +129,14 @@ func (p partialExits) HashTreeRoot() ([32]byte, error) {
 func (p partialExits) HashTreeRootWith(hh ssz.HashWalker) error {
 	indx := hh.Index()
 
-	for _, pexit := range p {
-		if err := pexit.HashTreeRootWith(hh); err != nil {
-			return errors.Wrap(err, "partial signature hash tree root")
+	num := uint64(len(p))
+	for _, pe := range p {
+		if err := pe.HashTreeRootWith(hh); err != nil {
+			return err
 		}
 	}
 
-	hh.Merkleize(indx)
+	hh.MerkleizeWithMixin(indx, num, sszMaxExits)
 
 	return nil
 }
@@ -144,7 +154,7 @@ type fullExitResponse struct {
 type fullExitAuthBlob struct {
 	LockHash        []byte
 	ValidatorPubkey []byte
-	ShareIndex      int
+	ShareIndex      uint64
 }
 
 func (f fullExitAuthBlob) GetTree() (*ssz.Node, error) {
@@ -169,8 +179,10 @@ func (f fullExitAuthBlob) HashTreeRootWith(hh ssz.HashWalker) error {
 	indx := hh.Index()
 
 	hh.PutBytes(f.LockHash)
-	hh.PutBytes(f.ValidatorPubkey)
-	hh.PutUint64(uint64(f.ShareIndex))
+	if err := putBytesN(hh, f.ValidatorPubkey, sszLenPubKey); err != nil {
+		return errors.Wrap(err, "validator pubkey ssz")
+	}
+	hh.PutUint64(f.ShareIndex)
 
 	hh.Merkleize(indx)
 
@@ -218,6 +230,26 @@ func (e ExitBlob) HashTreeRootWith(hh ssz.HashWalker) error {
 	}
 
 	hh.Merkleize(indx)
+
+	return nil
+}
+
+// leftPad returns the byte slice left padded with zero to ensure a length of at least l.
+func leftPad(b []byte, l int) []byte {
+	for len(b) < l {
+		b = append([]byte{0x00}, b...)
+	}
+
+	return b
+}
+
+// putByteList appends b as a ssz fixed size byte array of length n.
+func putBytesN(h ssz.HashWalker, b []byte, n int) error {
+	if len(b) > n {
+		return errors.New("bytes too long", z.Int("n", n), z.Int("l", len(b)))
+	}
+
+	h.PutBytes(leftPad(b, n))
 
 	return nil
 }

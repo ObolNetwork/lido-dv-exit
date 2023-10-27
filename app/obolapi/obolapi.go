@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -51,14 +52,14 @@ func bearerString(data []byte) string {
 }
 
 // fullExitURL returns the full exit Obol API URL for a given validator public key.
-func fullExitURL(valPubkey, lockHash string, shareIndex int) string {
+func fullExitURL(valPubkey, lockHash string, shareIndex uint64) string {
 	return strings.NewReplacer(
 		valPubkeyPath,
 		valPubkey,
 		lockHashPath,
 		lockHash,
 		shareIndexPath,
-		strconv.Itoa(shareIndex),
+		strconv.FormatUint(shareIndex, 10),
 	).Replace(fullExitTmpl)
 }
 
@@ -67,7 +68,7 @@ type Client struct {
 }
 
 // PostPartialExit POSTs the set of msg's to the Obol API, for a given lock hash.
-func (c Client) PostPartialExit(ctx context.Context, lockHash []byte, shareIndex int, identityKey *k1.PrivateKey, exitBlobs ...ExitBlob) error {
+func (c Client) PostPartialExit(ctx context.Context, lockHash []byte, shareIndex uint64, identityKey *k1.PrivateKey, exitBlobs ...ExitBlob) error {
 	lockHashStr := "0x" + hex.EncodeToString(lockHash)
 
 	path := partialExitURL(lockHashStr)
@@ -78,6 +79,11 @@ func (c Client) PostPartialExit(ctx context.Context, lockHash []byte, shareIndex
 	}
 
 	u.Path = path
+
+	// sort by validator index ascending
+	sort.Slice(exitBlobs, func(i, j int) bool {
+		return exitBlobs[i].SignedExitMessage.Message.ValidatorIndex < exitBlobs[j].SignedExitMessage.Message.ValidatorIndex
+	})
 
 	msg := unsignedPartialExitRequest{
 		ShareIdx:     shareIndex,
@@ -107,6 +113,8 @@ func (c Client) PostPartialExit(ctx context.Context, lockHash []byte, shareIndex
 		return errors.Wrap(err, "http new post request")
 	}
 
+	req.Header.Set("Content-Type", "application/json")
+
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return errors.Wrap(err, "http post error")
@@ -124,7 +132,7 @@ func (c Client) PostPartialExit(ctx context.Context, lockHash []byte, shareIndex
 }
 
 // GetFullExit gets the full exit message for a given validator public key, lock hash and share index.
-func (c Client) GetFullExit(ctx context.Context, valPubkey string, lockHash []byte, shareIndex int, identityKey *k1.PrivateKey) (ExitBlob, error) {
+func (c Client) GetFullExit(ctx context.Context, valPubkey string, lockHash []byte, shareIndex uint64, identityKey *k1.PrivateKey) (ExitBlob, error) {
 	valPubkeyBytes, err := util.ValidatorPubkeyToBytes(valPubkey)
 	if err != nil {
 		return ExitBlob{}, errors.Wrap(err, "validator pubkey to bytes")
