@@ -14,6 +14,7 @@ import (
 	eth2http "github.com/attestantio/go-eth2-client/http"
 	eth2p0 "github.com/attestantio/go-eth2-client/spec/phase0"
 	k1 "github.com/decred/dcrd/dcrec/secp256k1/v4"
+	"github.com/jonboulle/clockwork"
 	"github.com/obolnetwork/charon/app/errors"
 	"github.com/obolnetwork/charon/app/eth2wrap"
 	"github.com/obolnetwork/charon/app/forkjoin"
@@ -73,23 +74,28 @@ func Run(ctx context.Context, config Config) error {
 		return err
 	}
 
-	// TODO(gsora): cross-check the lido-ejector exits already present with valsKeys, so that we don't
-	// re-process what's already been processed.
-
 	bnClient, err := eth2Client(ctx, config.BeaconNodeURL)
 	if err != nil {
 		return errors.Wrap(err, "can't connect to beacon node")
 	}
 
-	oAPI := obolapi.Client{ObolAPIUrl: config.ObolAPIURL}
+	slotTicker, err := newSlotTicker(ctx, bnClient, clockwork.NewRealClock())
+	if err != nil {
+		return errors.Wrap(err, "can't subscribe to slot")
+	}
 
-	tick := time.NewTicker(1 * time.Second)
+	oAPI := obolapi.Client{ObolAPIUrl: config.ObolAPIURL}
 
 	var signedExits []obolapi.ExitBlob
 
-	for range tick.C {
+	for slot := range slotTicker {
 		if len(valsKeys) == 0 {
 			break // we finished signing everything we had to sign
+		}
+
+		if !slot.FirstInEpoch() {
+			log.Debug(ctx, "Slot not first in epoch, not doing anything")
+			continue
 		}
 
 		phase0Vals, err := valsKeys.ValidatorsPhase0()
@@ -144,6 +150,8 @@ func Run(ctx context.Context, config Config) error {
 			delete(valsKeys, keystore.ValidatorPubkey(validatorPubkStr))
 		}
 	}
+
+	tick := time.NewTicker(1 * time.Second)
 
 	// send signed  exit to obol api
 	for range tick.C {

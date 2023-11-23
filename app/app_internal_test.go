@@ -6,13 +6,17 @@ import (
 	"context"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	eth2v1 "github.com/attestantio/go-eth2-client/api/v1"
 	eth2p0 "github.com/attestantio/go-eth2-client/spec/phase0"
+	"github.com/jonboulle/clockwork"
+	"github.com/obolnetwork/charon/cluster"
 	"github.com/obolnetwork/charon/testutil"
 	"github.com/stretchr/testify/require"
 
 	"github.com/ObolNetwork/lido-dv-exit/app/bnapi"
+	ldetestutil "github.com/ObolNetwork/lido-dv-exit/app/util/testutil"
 )
 
 func Test_eth2Client(t *testing.T) {
@@ -49,4 +53,29 @@ func Test_eth2Client(t *testing.T) {
 	require.NoError(t, err)
 
 	require.NotEmpty(t, vals)
+}
+
+func Test_newSlotTicker(t *testing.T) {
+	valAmt := 4
+	operatorAmt := 4
+
+	lock, _, _ := cluster.NewForT(
+		t,
+		valAmt,
+		operatorAmt,
+		operatorAmt,
+		0,
+		cluster.WithVersion("v1.7.0"),
+	)
+
+	srvs := ldetestutil.APIServers(t, lock)
+	defer srvs.Close()
+
+	clock := clockwork.NewFakeClock()
+	tick, err := newSlotTicker(context.Background(), srvs.Eth2Client(t, context.Background()), clock)
+	require.NoError(t, err)
+
+	<-tick
+	clock.Advance(1 * time.Second)
+	<-tick
 }
