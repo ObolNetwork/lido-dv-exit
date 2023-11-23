@@ -5,6 +5,7 @@ package bnapi
 import (
 	"context"
 	_ "embed"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -166,9 +167,19 @@ func MockBeaconNode(validators map[string]eth2v1.Validator) http.Handler {
 	}))
 
 	router.Handle("/eth/v1/config/deposit_contract", logHandler(func(writer http.ResponseWriter, request *http.Request) {
+		addressBytes, err := hex.DecodeString("07b39f4fde4a38bace212b546dac87c58dfe3fdc")
+		if err != nil {
+			panic("cannot decode static deposit contract address, impossible!")
+		}
+
 		_ = json.NewEncoder(writer).Encode(struct {
 			Data *eth2v1.DepositContract `json:"data"`
-		}{})
+		}{
+			Data: &eth2v1.DepositContract{
+				ChainID: 0x000000,
+				Address: addressBytes,
+			},
+		})
 	}))
 
 	router.Handle("/eth/v1/config/fork_schedule", logHandler(func(writer http.ResponseWriter, request *http.Request) {

@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"time"
 
+	eth2api "github.com/attestantio/go-eth2-client/api"
 	eth2v1 "github.com/attestantio/go-eth2-client/api/v1"
 	eth2http "github.com/attestantio/go-eth2-client/http"
 	eth2p0 "github.com/attestantio/go-eth2-client/spec/phase0"
@@ -107,11 +108,16 @@ func Run(ctx context.Context, config Config) error {
 			return errors.Wrap(err, "validator keys to phase0")
 		}
 
-		valIndices, err := bnClient.ValidatorsByPubKey(ctx, bnapi.StateIDHead.String(), phase0Vals)
+		rawValIndices, err := bnClient.Validators(ctx, &eth2api.ValidatorsOpts{
+			State:   bnapi.StateIDHead.String(),
+			PubKeys: phase0Vals,
+		})
 		if err != nil {
 			log.Error(ctx, "Cannot fetch validator state", err)
 			continue
 		}
+
+		valIndices := rawValIndices.Data
 
 		for valIndex, val := range valIndices {
 			validatorPubkStr := val.Validator.PublicKey.String()

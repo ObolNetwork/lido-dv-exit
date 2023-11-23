@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	eth2api "github.com/attestantio/go-eth2-client/api"
 	eth2v1 "github.com/attestantio/go-eth2-client/api/v1"
 	eth2p0 "github.com/attestantio/go-eth2-client/spec/phase0"
 	"github.com/jonboulle/clockwork"
@@ -49,7 +50,10 @@ func Test_eth2Client(t *testing.T) {
 	client, err := eth2Client(ctx, srv.URL)
 	require.NoError(t, err)
 
-	vals, err := client.ValidatorsByPubKey(ctx, bnapi.StateIDFinalized.String(), []eth2p0.BLSPubKey{ongoingVal})
+	vals, err := client.Validators(ctx, &eth2api.ValidatorsOpts{
+		State:   bnapi.StateIDHead.String(),
+		PubKeys: []eth2p0.BLSPubKey{ongoingVal},
+	})
 	require.NoError(t, err)
 
 	require.NotEmpty(t, vals)

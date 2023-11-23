@@ -24,10 +24,11 @@ func newSlotTicker(ctx context.Context, eth2Cl eth2wrap.Client, clock clockwork.
 		return nil, err
 	}
 
-	spec, err := eth2Cl.Spec(ctx)
+	rawSpec, err := eth2Cl.Spec(ctx)
 	if err != nil {
 		return nil, err
 	}
+	spec := rawSpec.Data
 
 	slotDuration, ok := spec["SECONDS_PER_SLOT"].(time.Duration)
 	if !ok {
@@ -45,9 +46,9 @@ func newSlotTicker(ctx context.Context, eth2Cl eth2wrap.Client, clock clockwork.
 		startTime := genesis.Add(time.Duration(slot) * slotDuration)
 
 		return core.Slot{
-			Slot:          slot,
+			Slot:          uint64(slot),
 			Time:          startTime,
-			SlotsPerEpoch: int64(slotsPerEpoch),
+			SlotsPerEpoch: slotsPerEpoch,
 			SlotDuration:  slotDuration,
 		}
 	}
@@ -66,7 +67,7 @@ func newSlotTicker(ctx context.Context, eth2Cl eth2wrap.Client, clock clockwork.
 			// to pause-the-world events (i.e. resources are already constrained).
 			if clock.Now().After(slot.Next().Time) {
 				actual := currentSlot()
-				log.Warn(ctx, "Slot(s) skipped", nil, z.I64("actual_slot", actual.Slot), z.I64("expect_slot", slot.Slot))
+				log.Warn(ctx, "Slot(s) skipped", nil, z.U64("actual_slot", actual.Slot), z.U64("expect_slot", slot.Slot))
 
 				slot = actual
 			}
