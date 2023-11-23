@@ -40,6 +40,10 @@ type Config struct {
 	ObolAPIURL       string
 }
 
+const (
+	maxBeaconNodeTimeout = 10 * time.Second
+)
+
 // Run runs the lido-dv-exit core logic.
 func Run(ctx context.Context, config Config) error {
 	ctx, cancel := context.WithCancel(ctx)
@@ -348,7 +352,7 @@ func eth2Client(ctx context.Context, bnURL string) (eth2wrap.Client, error) {
 
 	bnClient := bnHTTPClient.(*eth2http.Service)
 
-	return eth2wrap.AdaptEth2HTTP(bnClient, 1*time.Second), nil
+	return eth2wrap.AdaptEth2HTTP(bnClient, maxBeaconNodeTimeout), nil
 }
 
 // loadExistingValidatorExits reads the indices for validators whose exits have been already processed.
