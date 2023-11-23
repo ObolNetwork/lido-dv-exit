@@ -6,19 +6,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"math/rand"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
-	"time"
 
-	eth2v1 "github.com/attestantio/go-eth2-client/api/v1"
-	eth2http "github.com/attestantio/go-eth2-client/http"
 	eth2p0 "github.com/attestantio/go-eth2-client/spec/phase0"
 	k1 "github.com/decred/dcrd/dcrec/secp256k1/v4"
 	"github.com/obolnetwork/charon/app/errors"
-	"github.com/obolnetwork/charon/app/eth2wrap"
 	"github.com/obolnetwork/charon/app/k1util"
 	"github.com/obolnetwork/charon/app/log"
 	"github.com/obolnetwork/charon/cluster"
@@ -26,15 +20,12 @@ import (
 	ckeystore "github.com/obolnetwork/charon/eth2util/keystore"
 	"github.com/obolnetwork/charon/eth2util/signing"
 	"github.com/obolnetwork/charon/tbls"
-	"github.com/obolnetwork/charon/testutil"
-	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/ObolNetwork/lido-dv-exit/app"
-	"github.com/ObolNetwork/lido-dv-exit/app/bnapi"
-	"github.com/ObolNetwork/lido-dv-exit/app/obolapi"
+	"github.com/ObolNetwork/lido-dv-exit/app/util/testutil"
 )
 
 const exitEpoch = eth2p0.Epoch(194048)
@@ -52,7 +43,7 @@ func Test_NormalFlow(t *testing.T) {
 		cluster.WithVersion("v1.7.0"),
 	)
 
-	srvs := testAPIServers(t, lock)
+	srvs := testutil.APIServers(t, lock)
 	defer srvs.Close()
 
 	run(t,
@@ -78,7 +69,7 @@ func Test_RunTwice(t *testing.T) {
 		cluster.WithVersion("v1.7.0"),
 	)
 
-	srvs := testAPIServers(t, lock)
+	srvs := testutil.APIServers(t, lock)
 	defer srvs.Close()
 
 	root := t.TempDir()
@@ -116,55 +107,6 @@ func Test_RunTwice(t *testing.T) {
 	)
 }
 
-type testServers struct {
-	obolAPIServer *httptest.Server
-	bnapiServer   *httptest.Server
-}
-
-func (ts testServers) Close() error {
-	_ = ts.obolAPIServer.Close
-	_ = ts.bnapiServer.Close
-
-	return nil
-}
-
-func testAPIServers(t *testing.T, lock cluster.Lock) testServers {
-	t.Helper()
-
-	oapiHandler, oapiAddLock := obolapi.MockServer()
-	oapiAddLock(lock)
-
-	oapiServer := httptest.NewServer(oapiHandler)
-
-	mockValidators := map[string]eth2v1.Validator{}
-
-	for _, val := range lock.Validators {
-		mockValidators[val.PublicKeyHex()] = eth2v1.Validator{
-			Index:   eth2p0.ValidatorIndex(rand.Int63()),
-			Balance: 42,
-			Status:  eth2v1.ValidatorStateActiveOngoing,
-			Validator: &eth2p0.Validator{
-				PublicKey:                  eth2p0.BLSPubKey(val.PubKey),
-				WithdrawalCredentials:      testutil.RandomBytes32(),
-				EffectiveBalance:           42,
-				Slashed:                    false,
-				ActivationEligibilityEpoch: 42,
-				ActivationEpoch:            42,
-				ExitEpoch:                  42,
-				WithdrawableEpoch:          42,
-			},
-		}
-	}
-
-	bnapiHandler := bnapi.MockBeaconNode(mockValidators)
-	bnapiServer := httptest.NewServer(bnapiHandler)
-
-	return testServers{
-		obolAPIServer: oapiServer,
-		bnapiServer:   bnapiServer,
-	}
-}
-
 func run(
 	t *testing.T,
 	root string,
@@ -172,7 +114,7 @@ func run(
 	enrs []*k1.PrivateKey,
 	keyShares [][]tbls.PrivateKey,
 	createDirFiles bool,
-	servers testServers,
+	servers testutil.TestServers,
 ) {
 	t.Helper()
 
@@ -225,10 +167,10 @@ func run(
 				Format: "console",
 				Color:  "false",
 			},
-			BeaconNodeURL:    servers.bnapiServer.URL,
+			BeaconNodeURL:    servers.BeaconNodeServer.URL,
 			EjectorExitPath:  filepath.Join(ejectorDir, opID),
 			CharonRuntimeDir: filepath.Join(root, opID),
-			ObolAPIURL:       servers.obolAPIServer.URL,
+			ObolAPIURL:       servers.ObolAPIServer.URL,
 			ExitEpoch:        194048,
 		}
 	}
@@ -250,7 +192,7 @@ func run(
 
 	require.NoError(t, eg.Wait())
 
-	mockEth2Cl := eth2Client(t, context.Background(), servers.bnapiServer.URL)
+	mockEth2Cl := servers.Eth2Client(t, context.Background())
 
 	// check that all produced exit messages are signed by all partial keys for all operators
 	for opIdx := 0; opIdx < operatorAmt; opIdx++ {
@@ -282,19 +224,4 @@ func run(
 			require.NoError(t, tbls.Verify(pubkBytes, sigData[:], tbls.Signature(exit.Signature)))
 		}
 	}
-}
-
-func eth2Client(t *testing.T, ctx context.Context, bnURL string) eth2wrap.Client {
-	t.Helper()
-
-	bnHTTPClient, err := eth2http.New(ctx,
-		eth2http.WithAddress(bnURL),
-		eth2http.WithLogLevel(zerolog.InfoLevel),
-	)
-
-	require.NoError(t, err)
-
-	bnClient := bnHTTPClient.(*eth2http.Service)
-
-	return eth2wrap.AdaptEth2HTTP(bnClient, 1*time.Second)
 }

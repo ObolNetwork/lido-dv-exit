@@ -10,10 +10,12 @@ import (
 	"path/filepath"
 	"time"
 
+	eth2api "github.com/attestantio/go-eth2-client/api"
 	eth2v1 "github.com/attestantio/go-eth2-client/api/v1"
 	eth2http "github.com/attestantio/go-eth2-client/http"
 	eth2p0 "github.com/attestantio/go-eth2-client/spec/phase0"
 	k1 "github.com/decred/dcrd/dcrec/secp256k1/v4"
+	"github.com/jonboulle/clockwork"
 	"github.com/obolnetwork/charon/app/errors"
 	"github.com/obolnetwork/charon/app/eth2wrap"
 	"github.com/obolnetwork/charon/app/forkjoin"
@@ -38,6 +40,10 @@ type Config struct {
 	ExitEpoch        uint64
 	ObolAPIURL       string
 }
+
+const (
+	maxBeaconNodeTimeout = 10 * time.Second
+)
 
 // Run runs the lido-dv-exit core logic.
 func Run(ctx context.Context, config Config) error {
@@ -73,23 +79,28 @@ func Run(ctx context.Context, config Config) error {
 		return err
 	}
 
-	// TODO(gsora): cross-check the lido-ejector exits already present with valsKeys, so that we don't
-	// re-process what's already been processed.
-
 	bnClient, err := eth2Client(ctx, config.BeaconNodeURL)
 	if err != nil {
 		return errors.Wrap(err, "can't connect to beacon node")
 	}
 
-	oAPI := obolapi.Client{ObolAPIUrl: config.ObolAPIURL}
+	slotTicker, err := newSlotTicker(ctx, bnClient, clockwork.NewRealClock())
+	if err != nil {
+		return errors.Wrap(err, "can't subscribe to slot")
+	}
 
-	tick := time.NewTicker(1 * time.Second)
+	oAPI := obolapi.Client{ObolAPIUrl: config.ObolAPIURL}
 
 	var signedExits []obolapi.ExitBlob
 
-	for range tick.C {
+	for slot := range slotTicker {
 		if len(valsKeys) == 0 {
 			break // we finished signing everything we had to sign
+		}
+
+		if !slot.FirstInEpoch() {
+			log.Debug(ctx, "Slot not first in epoch, not doing anything")
+			continue
 		}
 
 		phase0Vals, err := valsKeys.ValidatorsPhase0()
@@ -97,11 +108,16 @@ func Run(ctx context.Context, config Config) error {
 			return errors.Wrap(err, "validator keys to phase0")
 		}
 
-		valIndices, err := bnClient.ValidatorsByPubKey(ctx, bnapi.StateIDHead.String(), phase0Vals)
+		rawValIndices, err := bnClient.Validators(ctx, &eth2api.ValidatorsOpts{
+			State:   bnapi.StateIDHead.String(),
+			PubKeys: phase0Vals,
+		})
 		if err != nil {
 			log.Error(ctx, "Cannot fetch validator state", err)
 			continue
 		}
+
+		valIndices := rawValIndices.Data
 
 		for valIndex, val := range valIndices {
 			validatorPubkStr := val.Validator.PublicKey.String()
@@ -144,6 +160,8 @@ func Run(ctx context.Context, config Config) error {
 			delete(valsKeys, keystore.ValidatorPubkey(validatorPubkStr))
 		}
 	}
+
+	tick := time.NewTicker(1 * time.Second)
 
 	// send signed  exit to obol api
 	for range tick.C {
@@ -340,7 +358,7 @@ func eth2Client(ctx context.Context, bnURL string) (eth2wrap.Client, error) {
 
 	bnClient := bnHTTPClient.(*eth2http.Service)
 
-	return eth2wrap.AdaptEth2HTTP(bnClient, 1*time.Second), nil
+	return eth2wrap.AdaptEth2HTTP(bnClient, maxBeaconNodeTimeout), nil
 }
 
 // loadExistingValidatorExits reads the indices for validators whose exits have been already processed.
