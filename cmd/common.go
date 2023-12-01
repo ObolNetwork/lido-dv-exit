@@ -92,6 +92,11 @@ func bindLogFlags(flags *pflag.FlagSet, config *log.Config) {
 	flags.StringVar(&config.Color, "log-color", "auto", "Log color; auto, force, disable.")
 }
 
+func bindLokiFlags(flags *pflag.FlagSet, config *log.Config) {
+	flags.StringSliceVar(&config.LokiAddresses, "loki-addresses", nil, "Enables sending of logfmt structured logs to these Loki log aggregation server addresses. This is in addition to normal stderr logs.")
+	flags.StringVar(&config.LokiService, "loki-service", "lido-dv-exit", "Service label sent with logs to Loki.")
+}
+
 // wrapPreRunE wraps the provided preRunE function.
 func wrapPreRunE(cmd *cobra.Command, fn func(cmd *cobra.Command, args []string) error) {
 	preRunE := cmd.PreRunE // Allow multiple wraps of PreRunE.
