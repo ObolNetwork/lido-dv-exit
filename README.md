@@ -48,7 +48,10 @@ Flags:
       --log-color string            Log color; auto, force, disable. (default "auto")
       --log-format string           Log format; console, logfmt or json (default "console")
       --log-level string            Log level; debug, info, warn or error (default "info")
+      --loki-addresses strings      Enables sending of logfmt structured logs to these Loki log aggregation server addresses. This is in addition to normal stderr logs.
+      --loki-service string         Service label sent with logs to Loki. (default "lido-dv-exit")
   -o, --obol-api-url string         URL pointing to an obol API instance. (default "https://api.obol.tech")
+
 ```
 
 The flags that show default values can be omitted if correct.
@@ -68,3 +71,13 @@ To `run`, one must provide:
 Optionally one can specify an exit epoch, and an instance of the Obol API to be used for coordination purposes.
 
 One can also run the program with Docker, provided that the volume pointed to by `--ejector-exit-path` is writable.
+
+`lido-dv-exit` supports pushing logs to a Loki instance, while still printing them to `stderr`.
+
+To do so, one must configure the `run` command with `--loki-addresses` flag, on the **HTTP** Loki port, on the `/loki/api/v1/push` endpoint.
+
+For example, if Loki is hosted on the `loki.local` domain:
+
+```
+lido-dv-exit run --loki-addresses http://loki.local:3100/loki/api/v1/push # other configuration flags follow
+```
