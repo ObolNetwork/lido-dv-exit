@@ -8,7 +8,7 @@ require (
 	github.com/attestantio/go-eth2-client v0.19.4
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.2.0
 	github.com/ferranbt/fastssz v0.1.3
-	github.com/gorilla/handlers v1.5.1
+	github.com/gorilla/handlers v1.5.2
 	github.com/gorilla/mux v1.8.1
 	github.com/jonboulle/clockwork v0.4.0
 	github.com/libp2p/go-libp2p v0.31.0
