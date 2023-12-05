@@ -4,6 +4,7 @@ package util
 
 import (
 	"encoding/hex"
+	"runtime/debug"
 	"strings"
 
 	"github.com/obolnetwork/charon/app/errors"
@@ -67,4 +68,35 @@ func LockHashToBytes(lockHash string) ([]byte, error) {
 // If signature is empty, contains badly-formatted hex data or doesn't yield exactly 32 bytes, this function will error.
 func K1SignatureToBytes(signature string) ([]byte, error) {
 	return from0x(signature, k1SignatureLen)
+}
+
+// VCSInfoMap gets vcs information from bi and returns them as a map[string]string.
+func VCSInfoMap(bi *debug.BuildInfo) map[string]string {
+	ret := map[string]string{
+		"vcs.revision": "",
+		"vcs.time":     "",
+		"vcs.modified": "",
+	}
+
+	for _, element := range bi.Settings {
+		if _, ok := ret[element.Key]; ok {
+			ret[element.Key] = element.Value
+		}
+	}
+
+	return ret
+}
+
+// GitHash returns the git hash of the binary at the moment it was compiled.
+func GitHash() string {
+	raw, _ := debug.ReadBuildInfo()
+
+	info := VCSInfoMap(raw)
+
+	hash, found := info["vcs.revision"]
+	if !found {
+		panic("could not read git rev from binary, fatal!")
+	}
+
+	return hash
 }

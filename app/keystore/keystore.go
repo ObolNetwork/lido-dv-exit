@@ -10,6 +10,7 @@ import (
 	eth2p0 "github.com/attestantio/go-eth2-client/spec/phase0"
 	k1 "github.com/decred/dcrd/dcrec/secp256k1/v4"
 	"github.com/libp2p/go-libp2p/core/crypto"
+	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/obolnetwork/charon/app/errors"
 	"github.com/obolnetwork/charon/app/k1util"
 	"github.com/obolnetwork/charon/cluster"
@@ -126,7 +127,7 @@ func LoadManifest(dir string) (*manifestpb.Cluster, []tbls.PrivateKey, error) {
 func loadIdentityKey(dir string) (enr.Record, error) {
 	key, err := IdentityPrivateKey(dir)
 	if err != nil {
-		return enr.Record{}, errors.Wrap(err, "load priv key")
+		return enr.Record{}, err
 	}
 
 	e, err := enr.New(key)
@@ -180,6 +181,26 @@ func IdentityPrivateKey(dir string) (*k1.PrivateKey, error) {
 	}
 
 	return key, nil
+}
+
+// PeerIDFromIdentity returns the peer.ID for the identity key contained in dir.
+func PeerIDFromIdentity(dir string) (peer.ID, error) {
+	enr, err := loadIdentityKey(dir)
+	if err != nil {
+		return "", err
+	}
+
+	lp2pPubkey, err := crypto.UnmarshalSecp256k1PublicKey(enr.PubKey.SerializeCompressed())
+	if err != nil {
+		return "", errors.Wrap(err, "can't unmarshal pubkey in libp2p format")
+	}
+
+	id, err := peer.IDFromPublicKey(lp2pPubkey)
+	if err != nil {
+		return "", errors.Wrap(err, "can't derive libp2p peer.ID from private key")
+	}
+
+	return id, nil
 }
 
 // KeyshareToValidatorPubkey maps each share in cl to the associated validator private key.

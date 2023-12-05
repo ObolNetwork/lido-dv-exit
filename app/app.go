@@ -4,6 +4,7 @@ package app
 
 import (
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -22,6 +23,7 @@ import (
 	"github.com/obolnetwork/charon/app/log"
 	"github.com/obolnetwork/charon/app/z"
 	"github.com/obolnetwork/charon/eth2util/signing"
+	"github.com/obolnetwork/charon/p2p"
 	"github.com/obolnetwork/charon/tbls"
 	"github.com/obolnetwork/charon/tbls/tblsconv"
 
@@ -55,6 +57,20 @@ func Run(ctx context.Context, config Config) error {
 		return errors.Wrap(err, "keystore load error")
 	}
 
+	peerID, err := keystore.PeerIDFromIdentity(config.CharonRuntimeDir)
+	if err != nil {
+		return errors.Wrap(err, "can't derive peer id")
+	}
+
+	// Logging labels.
+	labels := map[string]string{
+		"lde_cluster_hash": hex.EncodeToString(cl.InitialMutationHash),
+		"lde_cluster_name": cl.Name,
+		"lde_cluster_peer": p2p.PeerName(peerID),
+		"lde_version":      util.GitHash(),
+	}
+	log.SetLokiLabels(labels)
+
 	shareIdx, err := keystore.ShareIdxForCluster(config.CharonRuntimeDir, cl)
 	if err != nil {
 		return errors.Wrap(err, "share idx for cluster")
@@ -65,7 +81,7 @@ func Run(ctx context.Context, config Config) error {
 		return errors.Wrap(err, "identity key loading")
 	}
 
-	ctx = log.WithCtx(ctx, z.U64("share_idx", shareIdx))
+	ctx = log.WithCtx(ctx, z.U64("share_idx", shareIdx), z.Str("peer_name", p2p.PeerName(peerID)))
 
 	log.Info(ctx, "Lido-dv-exit starting")
 

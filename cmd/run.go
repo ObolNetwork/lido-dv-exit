@@ -38,6 +38,7 @@ func newRunCmd(root *cobra.Command, conf app.Config, entrypoint func(ctx context
 	cmd.Flags().Uint64Var(&conf.ExitEpoch, "exit-epoch", 194048, "Epoch to exit validators at.")
 
 	bindLogFlags(cmd.Flags(), &conf.Log)
+	bindLokiFlags(cmd.Flags(), &conf.Log)
 
 	wrapPreRunE(cmd, func(cmd *cobra.Command, args []string) error {
 		if _, err := url.ParseRequestURI(conf.BeaconNodeURL); err != nil {

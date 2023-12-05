@@ -4,6 +4,7 @@ package keystore_test
 
 import (
 	"bytes"
+	"encoding/hex"
 	"fmt"
 	"math/rand"
 	"os"
@@ -149,5 +150,32 @@ func TestLoadManifest(t *testing.T) {
 		m, err := keystore.KeyshareToValidatorPubkey(cl, opKeys)
 		require.NoError(t, err)
 		require.Len(t, m, valAmt)
+	}
+}
+
+func Test_PeerIDFromIdentity(t *testing.T) {
+	valAmt := 4
+	operatorAmt := 10
+
+	_, identityKeys, _ := cluster.NewForT(
+		t,
+		valAmt,
+		operatorAmt,
+		operatorAmt,
+		0,
+		cluster.WithVersion("v1.7.0"),
+	)
+
+	baseDir := t.TempDir()
+
+	for opIdx := 0; opIdx < operatorAmt; opIdx++ {
+		oDir := filepath.Join(baseDir, fmt.Sprintf("op%d", opIdx))
+		idKeyFile := filepath.Join(oDir, "charon-enr-private-key")
+		require.NoError(t, os.MkdirAll(oDir, 0o755))
+		require.NoError(t, os.WriteFile(idKeyFile, []byte(hex.EncodeToString(identityKeys[opIdx].Serialize())), 0o755))
+
+		id, err := keystore.PeerIDFromIdentity(oDir)
+		require.NoError(t, err)
+		t.Log(id.String())
 	}
 }
