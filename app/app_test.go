@@ -31,7 +31,7 @@ import (
 const exitEpoch = eth2p0.Epoch(194048)
 
 func Test_NormalFlow(t *testing.T) {
-	valAmt := 4
+	valAmt := 100
 	operatorAmt := 4
 
 	lock, enrs, keyShares := cluster.NewForT(
