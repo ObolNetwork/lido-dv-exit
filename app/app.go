@@ -381,7 +381,7 @@ func eth2Client(ctx context.Context, bnURL string, valAmount uint64) (eth2wrap.C
 }
 
 // timeoutByValAmount returns the maximum timeout an eth2http call will have.
-// Return a timeout of (valAmount/50)*10, where 10 are the seconds to wait.
+// Return a timeout of (valAmount/50)*20, where 20 are the seconds to wait.
 func timeoutByValAmount(valAmount uint64) time.Duration {
 	rawRate := float64(valAmount) / float64(50)
 	rate := uint64(math.Ceil(rawRate))
