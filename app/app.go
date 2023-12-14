@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"time"
@@ -95,7 +96,7 @@ func Run(ctx context.Context, config Config) error {
 		return err
 	}
 
-	bnClient, err := eth2Client(ctx, config.BeaconNodeURL)
+	bnClient, err := eth2Client(ctx, config.BeaconNodeURL, uint64(len(valsKeys)))
 	if err != nil {
 		return errors.Wrap(err, "can't connect to beacon node")
 	}
@@ -115,7 +116,7 @@ func Run(ctx context.Context, config Config) error {
 		}
 
 		if !slot.FirstInEpoch() {
-			log.Debug(ctx, "Slot not first in epoch, not doing anything")
+			log.Debug(ctx, "Slot not first in epoch, not doing anything", z.U64("epoch", slot.Epoch()), z.U64("slot", slot.Slot))
 			continue
 		}
 
@@ -363,10 +364,12 @@ func sigDataForExit(ctx context.Context, exit eth2p0.VoluntaryExit, eth2Cl eth2w
 }
 
 // eth2Client initializes an eth2 beacon node API client.
-func eth2Client(ctx context.Context, bnURL string) (eth2wrap.Client, error) {
+func eth2Client(ctx context.Context, bnURL string, valAmount uint64) (eth2wrap.Client, error) {
 	bnHTTPClient, err := eth2http.New(ctx,
 		eth2http.WithAddress(bnURL),
 		eth2http.WithLogLevel(1), // zerolog.InfoLevel
+		eth2http.WithTimeout(timeoutByValAmount(valAmount)),
+		eth2http.WithPubKeyChunkSize(50),
 	)
 	if err != nil {
 		return nil, errors.Wrap(err, "can't connect to beacon node")
@@ -375,6 +378,15 @@ func eth2Client(ctx context.Context, bnURL string) (eth2wrap.Client, error) {
 	bnClient := bnHTTPClient.(*eth2http.Service)
 
 	return eth2wrap.AdaptEth2HTTP(bnClient, maxBeaconNodeTimeout), nil
+}
+
+// timeoutByValAmount returns the maximum timeout an eth2http call will have.
+// Return a timeout of (valAmount/50)*10, where 10 are the seconds to wait.
+func timeoutByValAmount(valAmount uint64) time.Duration {
+	rawRate := float64(valAmount) / float64(50)
+	rate := uint64(math.Ceil(rawRate))
+
+	return time.Duration(rate*20) * time.Second
 }
 
 // loadExistingValidatorExits reads the indices for validators whose exits have been already processed.
