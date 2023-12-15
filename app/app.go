@@ -46,6 +46,7 @@ type Config struct {
 
 const (
 	maxBeaconNodeTimeout = 10 * time.Second
+	obolAPITimeout       = 10 * time.Second
 )
 
 // Run runs the lido-dv-exit core logic.
@@ -259,9 +260,9 @@ func writeAllFullExits(
 }
 
 // fetchFullExit returns true if a full exit was received from the Obol API, and was written in exitFSPath.
-// Each HTTP request has a 10 seconds timeout.
+// Each HTTP request has a default timeout.
 func fetchFullExit(ctx context.Context, eth2Cl eth2wrap.Client, oAPI obolapi.Client, lockHash []byte, validatorPubkey, exitFSPath string, shareIndex uint64, identityKey *k1.PrivateKey) bool {
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, obolAPITimeout)
 	defer cancel()
 
 	fullExit, err := oAPI.GetFullExit(ctx, validatorPubkey, lockHash, shareIndex, identityKey)
@@ -325,9 +326,9 @@ func fetchFullExit(ctx context.Context, eth2Cl eth2wrap.Client, oAPI obolapi.Cli
 	return true
 }
 
-// postPartialExit posts exitBlobs to Obol API with a 10 seconds HTTP request deadline.
+// postPartialExit posts exitBlobs to Obol API with a default HTTP request timeout.
 func postPartialExit(ctx context.Context, oAPI obolapi.Client, mutationHash []byte, shareIndex uint64, identityKey *k1.PrivateKey, exitBlobs ...obolapi.ExitBlob) error {
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, obolAPITimeout)
 	defer cancel()
 
 	if err := oAPI.PostPartialExit(ctx, mutationHash, shareIndex, identityKey, exitBlobs...); err != nil {
