@@ -36,6 +36,7 @@ func newRunCmd(root *cobra.Command, conf app.Config, entrypoint func(ctx context
 	cmd.Flags().StringVarP(&conf.CharonRuntimeDir, "charon-runtime-dir", "c", "", "Charon directory, containing the validator_keys directory and manifest file or lock file.")
 	cmd.Flags().StringVarP(&conf.ObolAPIURL, "obol-api-url", "o", "https://api.obol.tech", "URL pointing to an obol API instance.")
 	cmd.Flags().Uint64Var(&conf.ExitEpoch, "exit-epoch", 194048, "Epoch to exit validators at.")
+	cmd.Flags().IntVar(&conf.ValidatorQueryChunkSize, "validator-query-chunk-size", 50, "Chunk size for validator querying. Lower this value if you see many context timeout on validator state beacon node query.")
 
 	bindLogFlags(cmd.Flags(), &conf.Log)
 	bindLokiFlags(cmd.Flags(), &conf.Log)
@@ -43,6 +44,10 @@ func newRunCmd(root *cobra.Command, conf app.Config, entrypoint func(ctx context
 	wrapPreRunE(cmd, func(cmd *cobra.Command, args []string) error {
 		if _, err := url.ParseRequestURI(conf.BeaconNodeURL); err != nil {
 			return errors.New("beacon-node-url does not contain a vaild URL")
+		}
+
+		if conf.ValidatorQueryChunkSize <= 0 {
+			return errors.New("validator query chunk size cannot be less or equal to 0")
 		}
 
 		if err := dirWritable(conf.EjectorExitPath); err != nil {

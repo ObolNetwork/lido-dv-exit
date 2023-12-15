@@ -36,12 +36,13 @@ import (
 
 // Config is the lido-dv-exit CLI configuration flag value holder.
 type Config struct {
-	Log              log.Config
-	BeaconNodeURL    string
-	EjectorExitPath  string
-	CharonRuntimeDir string
-	ExitEpoch        uint64
-	ObolAPIURL       string
+	Log                     log.Config
+	BeaconNodeURL           string
+	EjectorExitPath         string
+	CharonRuntimeDir        string
+	ExitEpoch               uint64
+	ObolAPIURL              string
+	ValidatorQueryChunkSize int
 }
 
 const (
@@ -97,7 +98,7 @@ func Run(ctx context.Context, config Config) error {
 		return err
 	}
 
-	bnClient, err := eth2Client(ctx, config.BeaconNodeURL, uint64(len(valsKeys)))
+	bnClient, err := eth2Client(ctx, config.BeaconNodeURL, uint64(len(valsKeys)), config.ValidatorQueryChunkSize)
 	if err != nil {
 		return errors.Wrap(err, "can't connect to beacon node")
 	}
@@ -389,12 +390,12 @@ func sigDataForExit(ctx context.Context, exit eth2p0.VoluntaryExit, eth2Cl eth2w
 }
 
 // eth2Client initializes an eth2 beacon node API client.
-func eth2Client(ctx context.Context, bnURL string, valAmount uint64) (eth2wrap.Client, error) {
+func eth2Client(ctx context.Context, bnURL string, valAmount uint64, chunkSize int) (eth2wrap.Client, error) {
 	bnHTTPClient, err := eth2http.New(ctx,
 		eth2http.WithAddress(bnURL),
 		eth2http.WithLogLevel(1), // zerolog.InfoLevel
 		eth2http.WithTimeout(timeoutByValAmount(valAmount)),
-		eth2http.WithPubKeyChunkSize(50),
+		eth2http.WithPubKeyChunkSize(chunkSize),
 	)
 	if err != nil {
 		return nil, errors.Wrap(err, "can't connect to beacon node")
