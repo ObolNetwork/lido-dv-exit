@@ -72,7 +72,7 @@ func Test_newSlotTicker(t *testing.T) {
 		cluster.WithVersion("v1.7.0"),
 	)
 
-	srvs := ldetestutil.APIServers(t, lock)
+	srvs := ldetestutil.APIServers(t, lock, false)
 	defer srvs.Close()
 
 	clock := clockwork.NewFakeClock()

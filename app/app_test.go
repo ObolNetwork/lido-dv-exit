@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	eth2p0 "github.com/attestantio/go-eth2-client/spec/phase0"
@@ -43,7 +44,7 @@ func Test_NormalFlow(t *testing.T) {
 		cluster.WithVersion("v1.7.0"),
 	)
 
-	srvs := testutil.APIServers(t, lock)
+	srvs := testutil.APIServers(t, lock, false)
 	defer srvs.Close()
 
 	run(t,
@@ -53,6 +54,35 @@ func Test_NormalFlow(t *testing.T) {
 		keyShares,
 		true,
 		srvs,
+		false,
+	)
+}
+
+func Test_WithNonActiveVals(t *testing.T) {
+	valAmt := 100
+	operatorAmt := 4
+
+	lock, enrs, keyShares := cluster.NewForT(
+		t,
+		valAmt,
+		operatorAmt,
+		operatorAmt,
+		0,
+		cluster.WithVersion("v1.7.0"),
+	)
+
+	srvs := testutil.APIServers(t, lock, true)
+	defer srvs.Close()
+
+	td := t.TempDir()
+	run(t,
+		td,
+		lock,
+		enrs,
+		keyShares,
+		true,
+		srvs,
+		true,
 	)
 }
 
@@ -69,7 +99,7 @@ func Test_RunTwice(t *testing.T) {
 		cluster.WithVersion("v1.7.0"),
 	)
 
-	srvs := testutil.APIServers(t, lock)
+	srvs := testutil.APIServers(t, lock, false)
 	defer srvs.Close()
 
 	root := t.TempDir()
@@ -81,6 +111,7 @@ func Test_RunTwice(t *testing.T) {
 		keyShares,
 		true,
 		srvs,
+		false,
 	)
 
 	// delete half exits from each ejector directory
@@ -104,6 +135,7 @@ func Test_RunTwice(t *testing.T) {
 		keyShares,
 		false,
 		srvs,
+		false,
 	)
 }
 
@@ -115,6 +147,7 @@ func run(
 	keyShares [][]tbls.PrivateKey,
 	createDirFiles bool,
 	servers testutil.TestServers,
+	withNonActiveVals bool,
 ) {
 	t.Helper()
 
@@ -177,7 +210,8 @@ func run(
 
 	eg := errgroup.Group{}
 
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
 	for opIdx := 0; opIdx < operatorAmt; opIdx++ {
 		opIdx := opIdx
@@ -190,7 +224,50 @@ func run(
 		})
 	}
 
-	require.NoError(t, eg.Wait())
+	egErrorChan := make(chan error)
+	halfExitsErrorChan := make(chan error)
+
+	go func() {
+		egErrorChan <- eg.Wait()
+	}()
+
+	if withNonActiveVals {
+		// when withNonActiveVals is true, it means that we'll only produce half of the
+		// full exits.
+		go func() {
+			stop := false
+
+			for !stop {
+				for opIdx := 0; opIdx < len(enrs); opIdx++ {
+					opID := fmt.Sprintf("op%d", opIdx)
+
+					ejectorDir := filepath.Join(ejectorDir, opID)
+					files, err := os.ReadDir(ejectorDir)
+					require.NoError(t, err)
+
+					if len(files) >= len(keyShares[opIdx])/2 {
+						cancel() // stop everything, test's alright
+						halfExitsErrorChan <- nil
+						stop = true
+					}
+				}
+				runtime.Gosched() // yield a little
+			}
+		}()
+	}
+
+	stop := false
+	for !stop {
+		select {
+		case err := <-egErrorChan:
+			require.NoError(t, err)
+			stop = true
+
+		case err := <-halfExitsErrorChan:
+			require.NoError(t, err)
+			return
+		}
+	}
 
 	mockEth2Cl := servers.Eth2Client(t, context.Background())
 
