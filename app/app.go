@@ -22,6 +22,7 @@ import (
 	"github.com/obolnetwork/charon/app/eth2wrap"
 	"github.com/obolnetwork/charon/app/log"
 	"github.com/obolnetwork/charon/app/z"
+	manifestpb "github.com/obolnetwork/charon/cluster/manifestpb/v1"
 	"github.com/obolnetwork/charon/eth2util/signing"
 	"github.com/obolnetwork/charon/p2p"
 	"github.com/obolnetwork/charon/tbls"
@@ -112,6 +113,24 @@ func Run(ctx context.Context, config Config) error {
 
 	for slot := range slotTicker {
 		if len(valsKeys) == 0 {
+			// if we don't have any more keys to process, make sure we fetched *all* full exits before
+			// exiting this loop
+			if len(fetchedSignedExits) != len(signedExits) {
+				writeAllFullExits(
+					ctx,
+					bnClient,
+					oAPI,
+					cl,
+					signedExits,
+					fetchedSignedExits,
+					config.EjectorExitPath,
+					shareIdx,
+					identityKey,
+				)
+
+				continue
+			}
+
 			break // we finished signing everything we had to sign
 		}
 
@@ -193,26 +212,50 @@ func Run(ctx context.Context, config Config) error {
 			signedExits = append(signedExits, signedExitsInRound...)
 		}
 
-		for _, signedExit := range signedExits {
-			if _, ok := fetchedSignedExits[signedExit.PublicKey]; ok {
-				continue // bypass already-fetched full exit
-			}
-
-			exitFSPath := filepath.Join(config.EjectorExitPath, fmt.Sprintf("validator-exit-%s.json", signedExit.PublicKey))
-
-			if !fetchFullExit(ctx, bnClient, oAPI, cl.InitialMutationHash, signedExit.PublicKey, exitFSPath, shareIdx, identityKey) {
-				log.Debug(ctx, "Could not fetch full exit for validator", z.Str("validator", signedExit.PublicKey))
-				continue
-			}
-
-			fetchedSignedExits[signedExit.PublicKey] = struct{}{}
-		}
-
+		writeAllFullExits(
+			ctx,
+			bnClient,
+			oAPI,
+			cl,
+			signedExits,
+			fetchedSignedExits,
+			config.EjectorExitPath,
+			shareIdx,
+			identityKey,
+		)
 	}
 
 	log.Info(ctx, "Successfully fetched exit messages!")
 
 	return nil
+}
+
+// writeAllFullExits fetches and writes signedExits to disk.
+func writeAllFullExits(
+	ctx context.Context,
+	eth2Cl eth2wrap.Client,
+	oAPI obolapi.Client,
+	cl *manifestpb.Cluster,
+	signedExits []obolapi.ExitBlob,
+	alreadySignedExits map[string]struct{},
+	ejectorExitPath string,
+	shareIndex uint64,
+	identityKey *k1.PrivateKey,
+) {
+	for _, signedExit := range signedExits {
+		if _, ok := alreadySignedExits[signedExit.PublicKey]; ok {
+			continue // bypass already-fetched full exit
+		}
+
+		exitFSPath := filepath.Join(ejectorExitPath, fmt.Sprintf("validator-exit-%s.json", signedExit.PublicKey))
+
+		if !fetchFullExit(ctx, eth2Cl, oAPI, cl.InitialMutationHash, signedExit.PublicKey, exitFSPath, shareIndex, identityKey) {
+			log.Debug(ctx, "Could not fetch full exit for validator", z.Str("validator", signedExit.PublicKey))
+			continue
+		}
+
+		alreadySignedExits[signedExit.PublicKey] = struct{}{}
+	}
 }
 
 // fetchFullExit returns true if a full exit was received from the Obol API, and was written in exitFSPath.
