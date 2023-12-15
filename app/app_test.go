@@ -200,11 +200,12 @@ func run(
 				Format: "console",
 				Color:  "false",
 			},
-			BeaconNodeURL:    servers.BeaconNodeServer.URL,
-			EjectorExitPath:  filepath.Join(ejectorDir, opID),
-			CharonRuntimeDir: filepath.Join(root, opID),
-			ObolAPIURL:       servers.ObolAPIServer.URL,
-			ExitEpoch:        194048,
+			BeaconNodeURL:           servers.BeaconNodeServer.URL,
+			EjectorExitPath:         filepath.Join(ejectorDir, opID),
+			CharonRuntimeDir:        filepath.Join(root, opID),
+			ObolAPIURL:              servers.ObolAPIServer.URL,
+			ExitEpoch:               194048,
+			ValidatorQueryChunkSize: 1,
 		}
 	}
 
