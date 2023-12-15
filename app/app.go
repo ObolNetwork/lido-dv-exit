@@ -20,9 +20,9 @@ import (
 	"github.com/jonboulle/clockwork"
 	"github.com/obolnetwork/charon/app/errors"
 	"github.com/obolnetwork/charon/app/eth2wrap"
-	"github.com/obolnetwork/charon/app/forkjoin"
 	"github.com/obolnetwork/charon/app/log"
 	"github.com/obolnetwork/charon/app/z"
+	manifestpb "github.com/obolnetwork/charon/cluster/manifestpb/v1"
 	"github.com/obolnetwork/charon/eth2util/signing"
 	"github.com/obolnetwork/charon/p2p"
 	"github.com/obolnetwork/charon/tbls"
@@ -46,6 +46,7 @@ type Config struct {
 
 const (
 	maxBeaconNodeTimeout = 10 * time.Second
+	obolAPITimeout       = 10 * time.Second
 )
 
 // Run runs the lido-dv-exit core logic.
@@ -109,9 +110,28 @@ func Run(ctx context.Context, config Config) error {
 	oAPI := obolapi.Client{ObolAPIUrl: config.ObolAPIURL}
 
 	var signedExits []obolapi.ExitBlob
+	fetchedSignedExits := map[string]struct{}{}
 
 	for slot := range slotTicker {
 		if len(valsKeys) == 0 {
+			// if we don't have any more keys to process, make sure we fetched *all* full exits before
+			// exiting this loop
+			if len(fetchedSignedExits) != len(signedExits) {
+				writeAllFullExits(
+					ctx,
+					bnClient,
+					oAPI,
+					cl,
+					signedExits,
+					fetchedSignedExits,
+					config.EjectorExitPath,
+					shareIdx,
+					identityKey,
+				)
+
+				continue
+			}
+
 			break // we finished signing everything we had to sign
 		}
 
@@ -119,6 +139,11 @@ func Run(ctx context.Context, config Config) error {
 			log.Debug(ctx, "Slot not first in epoch, not doing anything", z.U64("epoch", slot.Epoch()), z.U64("slot", slot.Slot))
 			continue
 		}
+
+		log.Info(ctx, "Signing exit for available validators...", z.Int("available_validators", len(valsKeys)))
+
+		// signedExitsInRound holds the signed partial exits generated at this epoch's lifecycle round
+		var signedExitsInRound []obolapi.ExitBlob
 
 		phase0Vals, err := valsKeys.ValidatorsPhase0()
 		if err != nil {
@@ -168,64 +193,37 @@ func Run(ctx context.Context, config Config) error {
 				continue
 			}
 
-			log.Debug(ctx, "Signed exit")
-			signedExits = append(signedExits, obolapi.ExitBlob{
+			log.Info(ctx, "Signed partial exit")
+			signedExitsInRound = append(signedExitsInRound, obolapi.ExitBlob{
 				PublicKey:         validatorPubkStr,
 				SignedExitMessage: exit,
 			})
-
-			delete(valsKeys, keystore.ValidatorPubkey(validatorPubkStr))
 		}
-	}
 
-	tick := time.NewTicker(1 * time.Second)
-
-	// send signed  exit to obol api
-	for range tick.C {
-		// we're retrying every second until we succeed
-		if postPartialExit(ctx, oAPI, cl.GetInitialMutationHash(), shareIdx, identityKey, signedExits...) {
-			tick.Stop()
-			break
-		}
-	}
-
-	type fetchExitData struct {
-		lockHash        []byte
-		validatorPubkey string
-		shareIndex      uint64
-		identityKey     *k1.PrivateKey
-	}
-
-	fork, join, fjcancel := forkjoin.New(ctx, func(ctx context.Context, data fetchExitData) (struct{}, error) {
-		tick := time.NewTicker(1 * time.Second)
-		defer tick.Stop()
-
-		exitFSPath := filepath.Join(config.EjectorExitPath, fmt.Sprintf("validator-exit-%s.json", data.validatorPubkey))
-
-		for range tick.C {
-			if fetchFullExit(ctx, bnClient, oAPI, data.lockHash, data.validatorPubkey, exitFSPath, data.shareIndex, data.identityKey) {
-				break
+		if len(signedExitsInRound) != 0 {
+			// try posting the partial exits that have been produced at this stage
+			if err := postPartialExit(ctx, oAPI, cl.GetInitialMutationHash(), shareIdx, identityKey, signedExitsInRound...); err != nil {
+				log.Error(ctx, "Cannot post exits to obol api, will retry later", err)
+			} else {
+				for _, signedExit := range signedExitsInRound {
+					delete(valsKeys, keystore.ValidatorPubkey(signedExit.PublicKey))
+				}
 			}
+
+			signedExits = append(signedExits, signedExitsInRound...)
 		}
 
-		return struct{}{}, nil
-	}, forkjoin.WithWorkers(10), forkjoin.WithWaitOnCancel())
-
-	defer fjcancel()
-
-	for _, se := range signedExits {
-		fork(fetchExitData{
-			lockHash:        cl.InitialMutationHash,
-			validatorPubkey: se.PublicKey,
-			shareIndex:      shareIdx,
-			identityKey:     identityKey,
-		})
-	}
-
-	_, err = join().Flatten()
-
-	if err != nil && !errors.Is(err, context.Canceled) {
-		return errors.Wrap(err, "fatal error while processing full exits from obol api, please get in contact with the development team as soon as possible, with a full log of the execution")
+		writeAllFullExits(
+			ctx,
+			bnClient,
+			oAPI,
+			cl,
+			signedExits,
+			fetchedSignedExits,
+			config.EjectorExitPath,
+			shareIdx,
+			identityKey,
+		)
 	}
 
 	log.Info(ctx, "Successfully fetched exit messages!")
@@ -233,10 +231,38 @@ func Run(ctx context.Context, config Config) error {
 	return nil
 }
 
+// writeAllFullExits fetches and writes signedExits to disk.
+func writeAllFullExits(
+	ctx context.Context,
+	eth2Cl eth2wrap.Client,
+	oAPI obolapi.Client,
+	cl *manifestpb.Cluster,
+	signedExits []obolapi.ExitBlob,
+	alreadySignedExits map[string]struct{},
+	ejectorExitPath string,
+	shareIndex uint64,
+	identityKey *k1.PrivateKey,
+) {
+	for _, signedExit := range signedExits {
+		if _, ok := alreadySignedExits[signedExit.PublicKey]; ok {
+			continue // bypass already-fetched full exit
+		}
+
+		exitFSPath := filepath.Join(ejectorExitPath, fmt.Sprintf("validator-exit-%s.json", signedExit.PublicKey))
+
+		if !fetchFullExit(ctx, eth2Cl, oAPI, cl.InitialMutationHash, signedExit.PublicKey, exitFSPath, shareIndex, identityKey) {
+			log.Debug(ctx, "Could not fetch full exit for validator", z.Str("validator", signedExit.PublicKey))
+			continue
+		}
+
+		alreadySignedExits[signedExit.PublicKey] = struct{}{}
+	}
+}
+
 // fetchFullExit returns true if a full exit was received from the Obol API, and was written in exitFSPath.
-// Each HTTP request has a 10 seconds timeout.
+// Each HTTP request has a default timeout.
 func fetchFullExit(ctx context.Context, eth2Cl eth2wrap.Client, oAPI obolapi.Client, lockHash []byte, validatorPubkey, exitFSPath string, shareIndex uint64, identityKey *k1.PrivateKey) bool {
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, obolAPITimeout)
 	defer cancel()
 
 	fullExit, err := oAPI.GetFullExit(ctx, validatorPubkey, lockHash, shareIndex, identityKey)
@@ -300,17 +326,16 @@ func fetchFullExit(ctx context.Context, eth2Cl eth2wrap.Client, oAPI obolapi.Cli
 	return true
 }
 
-func postPartialExit(ctx context.Context, oAPI obolapi.Client, mutationHash []byte, shareIndex uint64, identityKey *k1.PrivateKey, exitBlobs ...obolapi.ExitBlob) bool {
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+// postPartialExit posts exitBlobs to Obol API with a default HTTP request timeout.
+func postPartialExit(ctx context.Context, oAPI obolapi.Client, mutationHash []byte, shareIndex uint64, identityKey *k1.PrivateKey, exitBlobs ...obolapi.ExitBlob) error {
+	ctx, cancel := context.WithTimeout(ctx, obolAPITimeout)
 	defer cancel()
 
-	// we're retrying every second until we succeed
 	if err := oAPI.PostPartialExit(ctx, mutationHash, shareIndex, identityKey, exitBlobs...); err != nil {
-		log.Error(ctx, "Cannot post exits to obol api", err)
-		return false
+		return errors.Wrap(err, "cannot post partial exit")
 	}
 
-	return true
+	return nil
 }
 
 // shouldProcessValidator returns true if a validator needs to be processed, meaning a full exit message must

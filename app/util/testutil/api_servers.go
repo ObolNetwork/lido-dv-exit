@@ -53,7 +53,7 @@ func (ts *TestServers) Eth2Client(t *testing.T, ctx context.Context) eth2wrap.Cl
 }
 
 // APIServers return an instance of TestServer with mocked Obol API and beacon node API from a given lock file.
-func APIServers(t *testing.T, lock cluster.Lock) TestServers {
+func APIServers(t *testing.T, lock cluster.Lock, withNonActiveVals bool) TestServers {
 	t.Helper()
 
 	oapiHandler, oapiAddLock := obolapi.MockServer()
@@ -63,11 +63,23 @@ func APIServers(t *testing.T, lock cluster.Lock) TestServers {
 
 	mockValidators := map[string]eth2v1.Validator{}
 
-	for _, val := range lock.Validators {
+	mightBeInactive := func(withNonActiveVals bool, idx int) eth2v1.ValidatorState {
+		if !withNonActiveVals {
+			return eth2v1.ValidatorStateActiveOngoing
+		}
+
+		if idx%2 == 0 {
+			return eth2v1.ValidatorStateActiveOngoing
+		}
+
+		return eth2v1.ValidatorStatePendingQueued // return a state which doesn't represent "validator is running"
+	}
+
+	for idx, val := range lock.Validators {
 		mockValidators[val.PublicKeyHex()] = eth2v1.Validator{
 			Index:   eth2p0.ValidatorIndex(rand.Int63()), //nolint:gosec // testing function
 			Balance: 42,
-			Status:  eth2v1.ValidatorStateActiveOngoing,
+			Status:  mightBeInactive(withNonActiveVals, idx),
 			Validator: &eth2p0.Validator{
 				PublicKey:                  eth2p0.BLSPubKey(val.PubKey),
 				WithdrawalCredentials:      testutil.RandomBytes32(),
