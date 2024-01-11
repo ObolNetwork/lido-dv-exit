@@ -60,6 +60,9 @@ type testServer struct {
 
 	// store the lock file by its lock hash
 	lockFiles map[string]cluster.Lock
+
+	// drop one partial signature when returning the full set
+	dropOnePsig bool
 }
 
 // addLockFiles adds a set of lock files to ts.
@@ -232,6 +235,10 @@ func (ts *testServer) HandleFullExit(writer http.ResponseWriter, request *http.R
 		ret.ValidatorIndex = pExit.SignedExitMessage.Message.ValidatorIndex
 	}
 
+	if ts.dropOnePsig {
+		ret.Signatures[0] = "" // blank out the first signature, as if the API didn't receive the partial exit for it
+	}
+
 	if err := json.NewEncoder(writer).Encode(ret); err != nil {
 		writeErr(writer, http.StatusInternalServerError, errors.Wrap(err, "cannot marshal exit message").Error())
 		return
@@ -276,11 +283,12 @@ func cleanTmpl(tmpl string) string {
 
 // MockServer returns a obol API mock test server.
 // It returns a http.Handler to be served over HTTP, and a function to add cluster lock files to its database.
-func MockServer() (http.Handler, func(lock cluster.Lock)) {
+func MockServer(dropOnePsig bool) (http.Handler, func(lock cluster.Lock)) {
 	ts := testServer{
 		lock:         sync.Mutex{},
 		partialExits: map[string][]exitBlob{},
 		lockFiles:    map[string]cluster.Lock{},
+		dropOnePsig:  dropOnePsig,
 	}
 
 	router := mux.NewRouter()
@@ -295,8 +303,8 @@ func MockServer() (http.Handler, func(lock cluster.Lock)) {
 }
 
 // Run runs obol api mock on the provided bind port.
-func Run(_ context.Context, bind string, locks []cluster.Lock) error {
-	ms, addLock := MockServer()
+func Run(_ context.Context, bind string, locks []cluster.Lock, dropOnePsig bool) error {
+	ms, addLock := MockServer(dropOnePsig)
 
 	for _, lock := range locks {
 		addLock(lock)

@@ -38,7 +38,7 @@ type bmockCliConfig struct {
 func newMockServersCmd(
 	root *cobra.Command,
 	bnapiMock func(ctx context.Context, validators map[string]eth2v1.Validator, bindAddr string) error,
-	obolAPIMock func(_ context.Context, bind string, locks []cluster.Lock) error,
+	obolAPIMock func(_ context.Context, bind string, locks []cluster.Lock, _ bool) error,
 ) {
 	bcc := bmockCliConfig{
 		Validators: map[string]eth2v1.Validator{},
@@ -141,7 +141,7 @@ func runMockServers(
 	cmd *cobra.Command,
 	conf bmockCliConfig,
 	bnapiMock func(ctx context.Context, validators map[string]eth2v1.Validator, bindAddr string) error,
-	obolAPIMock func(_ context.Context, bind string, locks []cluster.Lock) error,
+	obolAPIMock func(_ context.Context, bind string, locks []cluster.Lock, _ bool) error,
 ) error {
 	if err := log.InitLogger(conf.Log); err != nil {
 		return err
@@ -158,7 +158,7 @@ func runMockServers(
 	})
 
 	eg.Go(func() error {
-		return obolAPIMock(ctx, conf.ObolAPIBind, conf.LockFiles)
+		return obolAPIMock(ctx, conf.ObolAPIBind, conf.LockFiles, false)
 	})
 
 	if err := eg.Wait(); err != nil {
