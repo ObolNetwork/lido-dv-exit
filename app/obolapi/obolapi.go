@@ -198,6 +198,11 @@ func (c Client) GetFullExit(ctx context.Context, valPubkey string, lockHash []by
 	rawSignatures := make(map[int]tbls.Signature)
 
 	for sigIdx, sigStr := range er.Signatures {
+		if len(sigStr) == 0 {
+			// ignore, the associated share index didn't push a partial signature yet
+			continue
+		}
+
 		if len(sigStr) < 2 {
 			return ExitBlob{}, errors.New("signature string has invalid size", z.Int("size", len(sigStr)))
 		}

@@ -56,7 +56,7 @@ func (ts *TestServers) Eth2Client(t *testing.T, ctx context.Context) eth2wrap.Cl
 func APIServers(t *testing.T, lock cluster.Lock, withNonActiveVals bool) TestServers {
 	t.Helper()
 
-	oapiHandler, oapiAddLock := obolapi.MockServer()
+	oapiHandler, oapiAddLock := obolapi.MockServer(false)
 	oapiAddLock(lock)
 
 	oapiServer := httptest.NewServer(oapiHandler)
