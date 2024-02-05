@@ -13,7 +13,7 @@ require (
 	github.com/jonboulle/clockwork v0.4.0
 	github.com/libp2p/go-libp2p v0.31.0
 	github.com/obolnetwork/charon v0.19.0
-	github.com/rs/zerolog v1.31.0
+	github.com/rs/zerolog v1.32.0
 	github.com/spf13/cobra v1.8.0
 	github.com/spf13/pflag v1.0.5
 	github.com/spf13/viper v1.18.2
