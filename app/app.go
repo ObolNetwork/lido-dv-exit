@@ -168,6 +168,7 @@ func Run(ctx context.Context, config Config) error {
 				z.U64("modulo", slotModulo),
 				z.U64("slot", slot.Slot),
 			)
+
 			continue
 		}
 
