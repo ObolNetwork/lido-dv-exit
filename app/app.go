@@ -4,10 +4,12 @@ package app
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"math"
+	"math/big"
 	"os"
 	"path/filepath"
 	"time"
@@ -108,6 +110,28 @@ func Run(ctx context.Context, config Config) error {
 		return errors.Wrap(err, "can't subscribe to slot")
 	}
 
+	specResp, err := bnClient.Spec(ctx, &eth2api.SpecOpts{})
+	if err != nil {
+		return errors.Wrap(err, "cannot fetch genesis spec")
+	}
+
+	rawSlotsPerEpoch, ok := specResp.Data["SLOTS_PER_EPOCH"]
+	if !ok {
+		return errors.Wrap(err, "spec field SLOTS_PER_EPOCH not found in spec")
+	}
+
+	slotPerEpoch, ok := rawSlotsPerEpoch.(uint64)
+	if !ok {
+		return errors.Wrap(err, "spec field SLOTS_PER_EPOCH is not uint64")
+	}
+
+	// define slot modulo
+	// when slot % slotModulo == 0, execution of the main loop will run
+	slotModulo, err := safeRand(slotPerEpoch + 1)
+	if err != nil {
+		return errors.Wrap(err, "can't get random number")
+	}
+
 	oAPI := obolapi.Client{ObolAPIUrl: config.ObolAPIURL}
 
 	var signedExits []obolapi.ExitBlob
@@ -136,8 +160,15 @@ func Run(ctx context.Context, config Config) error {
 			break // we finished signing everything we had to sign
 		}
 
-		if !slot.FirstInEpoch() {
-			log.Debug(ctx, "Slot not first in epoch, not doing anything", z.U64("epoch", slot.Epoch()), z.U64("slot", slot.Slot))
+		if !(slot.Slot%slotModulo == 0) {
+			log.Debug(
+				ctx,
+				"Slot not in modulo",
+				z.U64("epoch", slot.Epoch()),
+				z.U64("modulo", slotModulo),
+				z.U64("slot", slot.Slot),
+			)
+
 			continue
 		}
 
@@ -443,4 +474,25 @@ func loadExistingValidatorExits(ejectorPath string) (map[eth2p0.ValidatorIndex]s
 	}
 
 	return ret, nil
+}
+
+// safeRand returns a random uint64 from 1 to max, using crypto/rand as a source.
+func safeRand(max uint64) (uint64, error) {
+	bigMax := big.NewInt(int64(max))
+	zero := big.NewInt(0)
+
+	for {
+		candidate, err := rand.Int(rand.Reader, bigMax)
+		if err != nil {
+			//nolint:wrapcheck // will wrap in outer field
+			return 0, err
+		}
+
+		//	-1 if x <  y
+		//	 0 if x == y
+		//	+1 if x >  y
+		if candidate.Cmp(zero) == 1 {
+			return candidate.Uint64(), nil
+		}
+	}
 }
