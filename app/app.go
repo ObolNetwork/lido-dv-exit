@@ -1,4 +1,4 @@
-// Copyright © 2022-2023 Obol Labs Inc. Licensed under the terms of a Business Source License 1.1
+// Copyright © 2022-2024 Obol Labs Inc. Licensed under the terms of a Business Source License 1.1
 
 package app
 
@@ -25,7 +25,6 @@ import (
 	"github.com/obolnetwork/charon/app/log"
 	"github.com/obolnetwork/charon/app/z"
 	manifestpb "github.com/obolnetwork/charon/cluster/manifestpb/v1"
-	"github.com/obolnetwork/charon/eth2util/signing"
 	"github.com/obolnetwork/charon/p2p"
 	"github.com/obolnetwork/charon/tbls"
 	"github.com/obolnetwork/charon/tbls/tblsconv"
@@ -115,6 +114,16 @@ func Run(ctx context.Context, config Config) error {
 		return errors.Wrap(err, "cannot fetch genesis spec")
 	}
 
+	genesis, err := bnClient.Genesis(ctx, &eth2api.GenesisOpts{})
+	if err != nil {
+		return errors.Wrap(err, "fetching genesis")
+	}
+
+	capellaForkHash, err := bnapi.CapellaFork("0x" + hex.EncodeToString(genesis.Data.GenesisForkVersion[:]))
+	if err != nil {
+		return errors.Wrap(err, "fork hash conversion")
+	}
+
 	rawSlotsPerEpoch, ok := specResp.Data["SLOTS_PER_EPOCH"]
 	if !ok {
 		return errors.Wrap(err, "spec field SLOTS_PER_EPOCH not found in spec")
@@ -144,7 +153,6 @@ func Run(ctx context.Context, config Config) error {
 			if len(fetchedSignedExits) != len(signedExits) {
 				writeAllFullExits(
 					ctx,
-					bnClient,
 					oAPI,
 					cl,
 					signedExits,
@@ -152,6 +160,9 @@ func Run(ctx context.Context, config Config) error {
 					config.EjectorExitPath,
 					shareIdx,
 					identityKey,
+					genesis.Data.GenesisValidatorsRoot,
+					capellaForkHash,
+					specResp.Data,
 				)
 
 				continue
@@ -219,7 +230,14 @@ func Run(ctx context.Context, config Config) error {
 			}
 
 			// sign exit
-			exit, err := signExit(ctx, bnClient, valIndex, valKeyShare.Share, eth2p0.Epoch(config.ExitEpoch))
+			exit, err := signExit(
+				valIndex,
+				valKeyShare.Share,
+				eth2p0.Epoch(config.ExitEpoch),
+				genesis.Data.GenesisValidatorsRoot,
+				capellaForkHash,
+				specResp.Data,
+			)
 			if err != nil {
 				log.Error(ctx, "Cannot sign exit", err)
 				continue
@@ -247,7 +265,6 @@ func Run(ctx context.Context, config Config) error {
 
 		writeAllFullExits(
 			ctx,
-			bnClient,
 			oAPI,
 			cl,
 			signedExits,
@@ -255,6 +272,9 @@ func Run(ctx context.Context, config Config) error {
 			config.EjectorExitPath,
 			shareIdx,
 			identityKey,
+			genesis.Data.GenesisValidatorsRoot,
+			capellaForkHash,
+			specResp.Data,
 		)
 	}
 
@@ -266,7 +286,6 @@ func Run(ctx context.Context, config Config) error {
 // writeAllFullExits fetches and writes signedExits to disk.
 func writeAllFullExits(
 	ctx context.Context,
-	eth2Cl eth2wrap.Client,
 	oAPI obolapi.Client,
 	cl *manifestpb.Cluster,
 	signedExits []obolapi.ExitBlob,
@@ -274,6 +293,9 @@ func writeAllFullExits(
 	ejectorExitPath string,
 	shareIndex uint64,
 	identityKey *k1.PrivateKey,
+	genesisValidatorRoot eth2p0.Root,
+	forkHash string,
+	spec map[string]any,
 ) {
 	for _, signedExit := range signedExits {
 		if _, ok := alreadySignedExits[signedExit.PublicKey]; ok {
@@ -282,7 +304,18 @@ func writeAllFullExits(
 
 		exitFSPath := filepath.Join(ejectorExitPath, fmt.Sprintf("validator-exit-%s.json", signedExit.PublicKey))
 
-		if !fetchFullExit(ctx, eth2Cl, oAPI, cl.InitialMutationHash, signedExit.PublicKey, exitFSPath, shareIndex, identityKey) {
+		if !fetchFullExit(
+			ctx,
+			oAPI,
+			cl.GetInitialMutationHash(),
+			signedExit.PublicKey,
+			exitFSPath,
+			shareIndex,
+			identityKey,
+			genesisValidatorRoot,
+			forkHash,
+			spec,
+		) {
 			log.Debug(ctx, "Could not fetch full exit for validator", z.Str("validator", signedExit.PublicKey))
 			continue
 		}
@@ -293,7 +326,17 @@ func writeAllFullExits(
 
 // fetchFullExit returns true if a full exit was received from the Obol API, and was written in exitFSPath.
 // Each HTTP request has a default timeout.
-func fetchFullExit(ctx context.Context, eth2Cl eth2wrap.Client, oAPI obolapi.Client, lockHash []byte, validatorPubkey, exitFSPath string, shareIndex uint64, identityKey *k1.PrivateKey) bool {
+func fetchFullExit(
+	ctx context.Context,
+	oAPI obolapi.Client,
+	lockHash []byte,
+	validatorPubkey, exitFSPath string,
+	shareIndex uint64,
+	identityKey *k1.PrivateKey,
+	genesisValidatorRoot eth2p0.Root,
+	forkHash string,
+	spec map[string]any,
+) bool {
 	ctx, cancel := context.WithTimeout(ctx, obolAPITimeout)
 	defer cancel()
 
@@ -336,7 +379,7 @@ func fetchFullExit(ctx context.Context, eth2Cl eth2wrap.Client, oAPI obolapi.Cli
 		return false
 	}
 
-	exitRoot, err := sigDataForExit(ctx, *fullExit.SignedExitMessage.Message, eth2Cl, fullExit.SignedExitMessage.Message.Epoch)
+	exitRoot, err := sigDataForExit(*fullExit.SignedExitMessage.Message, genesisValidatorRoot, forkHash, spec)
 	if err != nil {
 		log.Error(ctx, "Cannot calculate hash tree root for exit message for verification", err)
 
@@ -378,13 +421,20 @@ func shouldProcessValidator(v *eth2v1.Validator) bool {
 
 // signExit signs a voluntary exit message for valIdx with the given keyShare.
 // Adapted from charon.
-func signExit(ctx context.Context, eth2Cl eth2wrap.Client, valIdx eth2p0.ValidatorIndex, keyShare tbls.PrivateKey, exitEpoch eth2p0.Epoch) (eth2p0.SignedVoluntaryExit, error) {
+func signExit(
+	valIdx eth2p0.ValidatorIndex,
+	keyShare tbls.PrivateKey,
+	exitEpoch eth2p0.Epoch,
+	genesisValidatorRoot eth2p0.Root,
+	forkHash string,
+	spec map[string]any,
+) (eth2p0.SignedVoluntaryExit, error) {
 	exit := &eth2p0.VoluntaryExit{
 		Epoch:          exitEpoch,
 		ValidatorIndex: valIdx,
 	}
 
-	sigData, err := sigDataForExit(ctx, *exit, eth2Cl, exitEpoch)
+	sigData, err := sigDataForExit(*exit, genesisValidatorRoot, forkHash, spec)
 	if err != nil {
 		return eth2p0.SignedVoluntaryExit{}, errors.Wrap(err, "exit hash tree root")
 	}
@@ -400,16 +450,31 @@ func signExit(ctx context.Context, eth2Cl eth2wrap.Client, valIdx eth2p0.Validat
 	}, nil
 }
 
-// sigDataForExit returns the hash tree root for the given exit message, at the given exit epoch.
-func sigDataForExit(ctx context.Context, exit eth2p0.VoluntaryExit, eth2Cl eth2wrap.Client, exitEpoch eth2p0.Epoch) ([32]byte, error) {
+// sigDataForExit returns the hash tree root for the given exit message.
+func sigDataForExit(
+	exit eth2p0.VoluntaryExit,
+	genesisValidatorRoot eth2p0.Root,
+	forkHash string,
+	spec map[string]any,
+) ([32]byte, error) {
 	sigRoot, err := exit.HashTreeRoot()
 	if err != nil {
 		return [32]byte{}, errors.Wrap(err, "exit hash tree root")
 	}
 
-	domain, err := signing.GetDomain(ctx, eth2Cl, signing.DomainExit, exitEpoch)
+	domainType, ok := spec["DOMAIN_VOLUNTARY_EXIT"]
+	if !ok {
+		return [32]byte{}, errors.New("domain type not found")
+	}
+
+	domainTyped, ok := domainType.(eth2p0.DomainType)
+	if !ok {
+		return [32]byte{}, errors.New("invalid domain type")
+	}
+
+	domain, err := bnapi.ComputeDomain(forkHash, domainTyped, genesisValidatorRoot)
 	if err != nil {
-		return [32]byte{}, errors.Wrap(err, "get domain")
+		return [32]byte{}, err
 	}
 
 	sigData, err := (&eth2p0.SigningData{ObjectRoot: sigRoot, Domain: domain}).HashTreeRoot()
