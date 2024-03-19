@@ -118,7 +118,7 @@ func Run(ctx context.Context, config Config) error {
 
 	genesis, err := bnClient.Genesis(ctx, &eth2api.GenesisOpts{})
 	if err != nil {
-		return errors.Wrap(err, "cannot fetch genesis")
+		return errors.Wrap(err, "fetching genesis")
 	}
 
 	capellaForkHash, err := bnapi.CapellaFork("0x" + hex.EncodeToString(genesis.Data.GenesisForkVersion[:]))
