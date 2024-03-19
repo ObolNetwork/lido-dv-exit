@@ -1,9 +1,12 @@
+// Copyright © 2022-2024 Obol Labs Inc. Licensed under the terms of a Business Source License 1.1
+
 // Copyright © 2022-2023 Obol Labs Inc. Licensed under the terms of a Business Source License 1.1
 
 package app_test
 
 import (
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -11,6 +14,7 @@ import (
 	"runtime"
 	"testing"
 
+	eth2api "github.com/attestantio/go-eth2-client/api"
 	eth2p0 "github.com/attestantio/go-eth2-client/spec/phase0"
 	k1 "github.com/decred/dcrd/dcrec/secp256k1/v4"
 	"github.com/obolnetwork/charon/app/errors"
@@ -19,17 +23,15 @@ import (
 	"github.com/obolnetwork/charon/cluster"
 	"github.com/obolnetwork/charon/cluster/manifest"
 	ckeystore "github.com/obolnetwork/charon/eth2util/keystore"
-	"github.com/obolnetwork/charon/eth2util/signing"
 	"github.com/obolnetwork/charon/tbls"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/ObolNetwork/lido-dv-exit/app"
+	"github.com/ObolNetwork/lido-dv-exit/app/bnapi"
 	"github.com/ObolNetwork/lido-dv-exit/app/util/testutil"
 )
-
-const exitEpoch = eth2p0.Epoch(194048)
 
 func Test_NormalFlow(t *testing.T) {
 	valAmt := 100
@@ -272,6 +274,19 @@ func run(
 
 	mockEth2Cl := servers.Eth2Client(t, context.Background())
 
+	rawSpec, err := mockEth2Cl.Spec(ctx, &eth2api.SpecOpts{})
+	require.NoError(t, err)
+
+	spec := rawSpec.Data
+
+	genesis, err := mockEth2Cl.Genesis(ctx, &eth2api.GenesisOpts{})
+	require.NoError(t, err)
+
+	forkHash, err := bnapi.CapellaFork("0x" + hex.EncodeToString(genesis.Data.GenesisForkVersion[:]))
+	require.NoError(t, err)
+
+	genesisValidatorRoot := genesis.Data.GenesisValidatorsRoot
+
 	// check that all produced exit messages are signed by all partial keys for all operators
 	for opIdx := 0; opIdx < operatorAmt; opIdx++ {
 		opID := fmt.Sprintf("op%d", opIdx)
@@ -290,7 +305,13 @@ func run(
 			sigRoot, err := exit.Message.HashTreeRoot()
 			require.NoError(t, err)
 
-			domain, err := signing.GetDomain(context.Background(), mockEth2Cl, signing.DomainExit, exitEpoch)
+			domainType, ok := spec["DOMAIN_VOLUNTARY_EXIT"]
+			require.True(t, ok)
+
+			domainTyped, ok := domainType.(eth2p0.DomainType)
+			require.True(t, ok)
+
+			domain, err := bnapi.ComputeDomain(forkHash, domainTyped, genesisValidatorRoot)
 			require.NoError(t, err)
 
 			sigData, err := (&eth2p0.SigningData{ObjectRoot: sigRoot, Domain: domain}).HashTreeRoot()

@@ -1,3 +1,5 @@
+// Copyright © 2022-2024 Obol Labs Inc. Licensed under the terms of a Business Source License 1.1
+
 // Copyright © 2022-2023 Obol Labs Inc. Licensed under the terms of a Business Source License 1.1
 
 package util
@@ -23,6 +25,9 @@ const (
 
 	// k1SignatureLen is the amount of bytes a well-formed K1 signature must contain.
 	k1SignatureLen = 65
+
+	// forkHashLen is the amount of bytes a well-formed Ethereum fork hash must contain.
+	forkHashLen = 4
 )
 
 // from0x decodes hex-encoded data and expects it to be exactly of len(length).
@@ -44,6 +49,12 @@ func from0x(data string, length int) ([]byte, error) {
 	}
 
 	return b, nil
+}
+
+// ForkHashToBytes returns the bytes representation of the Ethereum fork hash string passed in input.
+// If forkHAsh is empty, contains badly-formatted hex data or doesn't yield exactly 4 bytes, this function will error.
+func ForkHashToBytes(forkHash string) ([]byte, error) {
+	return from0x(forkHash, forkHashLen)
 }
 
 // ValidatorPubkeyToBytes returns the bytes representation of the validator hex-encoded public key string passed in input.
