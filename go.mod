@@ -12,7 +12,7 @@ require (
 	github.com/gorilla/mux v1.8.1
 	github.com/jonboulle/clockwork v0.4.0
 	github.com/libp2p/go-libp2p v0.31.0
-	github.com/obolnetwork/charon v0.19.0
+	github.com/obolnetwork/charon v0.19.2
 	github.com/rs/zerolog v1.31.0
 	github.com/spf13/cobra v1.8.0
 	github.com/spf13/pflag v1.0.5
