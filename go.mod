@@ -6,7 +6,7 @@ toolchain go1.21.4
 
 require (
 	github.com/attestantio/go-eth2-client v0.19.8
-	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.2.0
+	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.3.0
 	github.com/ferranbt/fastssz v0.1.3
 	github.com/gorilla/handlers v1.5.2
 	github.com/gorilla/mux v1.8.1
