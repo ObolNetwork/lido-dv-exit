@@ -10,9 +10,6 @@ jobs:
       GITHUB_PR: ${{ toJSON(github.event.pull_request) }}
     steps:
       - uses: actions/checkout@v3
-      - uses: actions/setup-go@v4
-        with:
-          go-version: '1.22.1'
-
+      - uses: ./.github/actions/setup-go
       - name: "Verify PR"
         run: go run github.com/obolnetwork/charon/testutil/verifypr
