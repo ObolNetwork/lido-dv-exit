@@ -4,6 +4,7 @@ package app
 
 import (
 	"context"
+	"math/rand"
 	"net/http/httptest"
 	"testing"
 	"time"
@@ -69,7 +70,8 @@ func Test_newSlotTicker(t *testing.T) {
 		operatorAmt,
 		operatorAmt,
 		0,
-		cluster.WithVersion("v1.7.0"),
+		rand.New(rand.NewSource(0)),
+		cluster.WithVersion("v1.8.0"),
 	)
 
 	srvs := ldetestutil.APIServers(t, lock, false)
