@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -41,7 +42,8 @@ func Test_NormalFlow(t *testing.T) {
 		operatorAmt,
 		operatorAmt,
 		0,
-		cluster.WithVersion("v1.7.0"),
+		rand.New(rand.NewSource(0)),
+		cluster.WithVersion("v1.8.0"),
 	)
 
 	srvs := testutil.APIServers(t, lock, false)
@@ -68,7 +70,8 @@ func Test_WithNonActiveVals(t *testing.T) {
 		operatorAmt,
 		operatorAmt,
 		0,
-		cluster.WithVersion("v1.7.0"),
+		rand.New(rand.NewSource(0)),
+		cluster.WithVersion("v1.8.0"),
 	)
 
 	srvs := testutil.APIServers(t, lock, true)
@@ -96,7 +99,8 @@ func Test_RunTwice(t *testing.T) {
 		operatorAmt,
 		operatorAmt,
 		0,
-		cluster.WithVersion("v1.7.0"),
+		rand.New(rand.NewSource(0)),
+		cluster.WithVersion("v1.8.0"),
 	)
 
 	srvs := testutil.APIServers(t, lock, false)

@@ -4,6 +4,7 @@ package obolapi_test
 
 import (
 	"context"
+	"math/rand"
 	"net/http/httptest"
 	"testing"
 	"time"
@@ -43,6 +44,7 @@ func TestAPIFlow(t *testing.T) {
 		kn,
 		kn,
 		0,
+		rand.New(rand.NewSource(0)),
 	)
 
 	addLockFiles(lock)
@@ -127,6 +129,7 @@ func TestAPIFlowMissingSig(t *testing.T) {
 		kn-1,
 		kn,
 		0,
+		rand.New(rand.NewSource(0)),
 	)
 
 	addLockFiles(lock)
