@@ -376,6 +376,11 @@ func (vsh *validatorStateHandler) exitValidator(slotCounter *atomic.Uint64) http
 	}
 }
 
+type validatorsBody struct {
+	IDs      []string `json:"ids,omitempty"`
+	Statuses []string `json:"statuses,omitempty"`
+}
+
 func (vsh *validatorStateHandler) getValidator(singleValidatorQuery bool) http.HandlerFunc {
 	return func(writer http.ResponseWriter, request *http.Request) {
 		vsh.lock.Lock()
@@ -388,13 +393,27 @@ func (vsh *validatorStateHandler) getValidator(singleValidatorQuery bool) http.H
 		if singleValidatorQuery {
 			val, ok := vars["valId"]
 			if !ok {
-				validatorNotFound(writer)
+				writer.WriteHeader(http.StatusBadRequest)
 				return
 			}
 
 			valIDs = append(valIDs, val)
 		} else {
-			valIDs = request.URL.Query()["id"]
+			if request.Method == http.MethodGet {
+				valIDs = request.URL.Query()["id"]
+			} else if request.Method == http.MethodPost {
+				var valBody validatorsBody
+				err := json.NewDecoder(request.Body).Decode(&valBody)
+				if err != nil {
+					writer.WriteHeader(http.StatusBadRequest)
+					return
+				}
+				valIDs = valBody.IDs
+			} else {
+				writer.WriteHeader(http.StatusBadRequest)
+				return
+			}
+
 			if len(valIDs) == 0 {
 				validatorNotFound(writer)
 				return
