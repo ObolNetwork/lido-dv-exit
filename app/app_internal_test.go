@@ -4,7 +4,6 @@ package app
 
 import (
 	"context"
-	"math/rand"
 	"net/http/httptest"
 	"testing"
 	"time"
@@ -13,12 +12,11 @@ import (
 	eth2v1 "github.com/attestantio/go-eth2-client/api/v1"
 	eth2p0 "github.com/attestantio/go-eth2-client/spec/phase0"
 	"github.com/jonboulle/clockwork"
-	"github.com/obolnetwork/charon/cluster"
 	"github.com/obolnetwork/charon/testutil"
+	"github.com/obolnetwork/charon/testutil/beaconmock"
 	"github.com/stretchr/testify/require"
 
 	"github.com/ObolNetwork/lido-dv-exit/app/bnapi"
-	ldetestutil "github.com/ObolNetwork/lido-dv-exit/app/util/testutil"
 )
 
 func Test_eth2Client(t *testing.T) {
@@ -48,7 +46,7 @@ func Test_eth2Client(t *testing.T) {
 
 	ctx := context.Background()
 
-	client, err := eth2Client(ctx, srv.URL, 1, 1)
+	client, err := eth2Client(ctx, srv.URL, 1, 1, [4]byte{0, 0, 0, 0})
 	require.NoError(t, err)
 
 	vals, err := client.Validators(ctx, &eth2api.ValidatorsOpts{
@@ -61,24 +59,15 @@ func Test_eth2Client(t *testing.T) {
 }
 
 func Test_newSlotTicker(t *testing.T) {
-	valAmt := 4
-	operatorAmt := 4
+	mock, err := beaconmock.New(beaconmock.WithSlotDuration(1 * time.Second))
+	require.NoError(t, err)
 
-	lock, _, _ := cluster.NewForT(
-		t,
-		valAmt,
-		operatorAmt,
-		operatorAmt,
-		0,
-		rand.New(rand.NewSource(0)),
-		cluster.WithVersion("v1.8.0"),
-	)
-
-	srvs := ldetestutil.APIServers(t, lock, false)
-	defer srvs.Close()
+	defer func() {
+		require.NoError(t, mock.Close())
+	}()
 
 	clock := clockwork.NewFakeClock()
-	tick, err := newSlotTicker(context.Background(), srvs.Eth2Client(t, context.Background()), clock)
+	tick, err := newSlotTicker(context.Background(), mock, clock)
 	require.NoError(t, err)
 
 	<-tick
