@@ -1,5 +1,4 @@
 // Copyright © 2022-2024 Obol Labs Inc. Licensed under the terms of a Business Source License 1.1
-
 package app_test
 
 import (
@@ -8,29 +7,91 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/rand"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"runtime"
 	"testing"
+	"time"
 
 	eth2api "github.com/attestantio/go-eth2-client/api"
+	eth2v1 "github.com/attestantio/go-eth2-client/api/v1"
+	eth2http "github.com/attestantio/go-eth2-client/http"
 	eth2p0 "github.com/attestantio/go-eth2-client/spec/phase0"
 	k1 "github.com/decred/dcrd/dcrec/secp256k1/v4"
 	"github.com/obolnetwork/charon/app/errors"
+	"github.com/obolnetwork/charon/app/eth2wrap"
 	"github.com/obolnetwork/charon/app/k1util"
 	"github.com/obolnetwork/charon/app/log"
 	"github.com/obolnetwork/charon/cluster"
 	"github.com/obolnetwork/charon/cluster/manifest"
 	ckeystore "github.com/obolnetwork/charon/eth2util/keystore"
 	"github.com/obolnetwork/charon/tbls"
+	"github.com/obolnetwork/charon/testutil/beaconmock"
+	"github.com/obolnetwork/charon/testutil/obolapimock"
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/ObolNetwork/lido-dv-exit/app"
 	"github.com/ObolNetwork/lido-dv-exit/app/bnapi"
-	"github.com/ObolNetwork/lido-dv-exit/app/util/testutil"
 )
+
+type servers struct {
+	obolAPI *httptest.Server
+	beacon  beaconmock.Mock
+}
+
+func (s *servers) Close() {
+	s.obolAPI.Close()
+	_ = s.beacon.Close()
+}
+
+func newServers(t *testing.T, lock cluster.Lock) servers {
+	t.Helper()
+
+	vs := make(beaconmock.ValidatorSet)
+
+	for idx, dv := range lock.Validators {
+		idx := eth2p0.ValidatorIndex(idx + 1)
+		vs[idx] = &eth2v1.Validator{
+			Index:   idx,
+			Balance: 42,
+			Status:  eth2v1.ValidatorStateActiveOngoing,
+			Validator: &eth2p0.Validator{
+				PublicKey:                  eth2p0.BLSPubKey(dv.PubKey),
+				WithdrawalCredentials:      dv.PubKey[:32],
+				EffectiveBalance:           42,
+				Slashed:                    false,
+				ActivationEligibilityEpoch: 42,
+				ActivationEpoch:            42,
+				ExitEpoch:                  18446744073709551615,
+				WithdrawableEpoch:          42,
+			},
+		}
+	}
+
+	bmock, err := beaconmock.New(
+		beaconmock.WithSlotDuration(1*time.Second),
+		beaconmock.WithValidatorSet(vs),
+		beaconmock.WithForkVersion([4]byte(lock.ForkVersion)),
+	)
+	require.NoError(t, err)
+
+	mockEth2Cl := eth2Client(t, context.Background(), bmock.Address())
+	mockEth2Cl.SetForkVersion([4]byte(lock.ForkVersion))
+
+	handler, addLock := obolapimock.MockServer(false, mockEth2Cl)
+	addLock(lock)
+
+	oapiServer := httptest.NewServer(handler)
+
+	return servers{
+		beacon:  bmock,
+		obolAPI: oapiServer,
+	}
+}
 
 func Test_NormalFlow(t *testing.T) {
 	valAmt := 100
@@ -46,7 +107,7 @@ func Test_NormalFlow(t *testing.T) {
 		cluster.WithVersion("v1.8.0"),
 	)
 
-	srvs := testutil.APIServers(t, lock, false)
+	srvs := newServers(t, lock)
 	defer srvs.Close()
 
 	run(t,
@@ -74,7 +135,7 @@ func Test_WithNonActiveVals(t *testing.T) {
 		cluster.WithVersion("v1.8.0"),
 	)
 
-	srvs := testutil.APIServers(t, lock, true)
+	srvs := newServers(t, lock)
 	defer srvs.Close()
 
 	td := t.TempDir()
@@ -103,7 +164,7 @@ func Test_RunTwice(t *testing.T) {
 		cluster.WithVersion("v1.8.0"),
 	)
 
-	srvs := testutil.APIServers(t, lock, false)
+	srvs := newServers(t, lock)
 	defer srvs.Close()
 
 	root := t.TempDir()
@@ -150,7 +211,7 @@ func run(
 	enrs []*k1.PrivateKey,
 	keyShares [][]tbls.PrivateKey,
 	createDirFiles bool,
-	servers testutil.TestServers,
+	servers servers,
 	withNonActiveVals bool,
 ) {
 	t.Helper()
@@ -204,10 +265,10 @@ func run(
 				Format: "console",
 				Color:  "false",
 			},
-			BeaconNodeURL:           servers.BeaconNodeServer.URL,
+			BeaconNodeURL:           servers.beacon.Address(),
 			EjectorExitPath:         filepath.Join(ejectorDir, opID),
 			CharonRuntimeDir:        filepath.Join(root, opID),
-			ObolAPIURL:              servers.ObolAPIServer.URL,
+			ObolAPIURL:              servers.obolAPI.URL,
 			ExitEpoch:               194048,
 			ValidatorQueryChunkSize: 1,
 		}
@@ -274,7 +335,8 @@ func run(
 		}
 	}
 
-	mockEth2Cl := servers.Eth2Client(t, context.Background())
+	mockEth2Cl := eth2Client(t, context.Background(), servers.beacon.Address())
+	mockEth2Cl.SetForkVersion([4]byte(lock.ForkVersion))
 
 	rawSpec, err := mockEth2Cl.Spec(ctx, &eth2api.SpecOpts{})
 	require.NoError(t, err)
@@ -325,4 +387,19 @@ func run(
 			require.NoError(t, tbls.Verify(pubkBytes, sigData[:], tbls.Signature(exit.Signature)))
 		}
 	}
+}
+
+func eth2Client(t *testing.T, ctx context.Context, u string) eth2wrap.Client {
+	t.Helper()
+
+	bnHTTPClient, err := eth2http.New(ctx,
+		eth2http.WithAddress(u),
+		eth2http.WithLogLevel(zerolog.InfoLevel),
+	)
+
+	require.NoError(t, err)
+
+	bnClient := bnHTTPClient.(*eth2http.Service)
+
+	return eth2wrap.AdaptEth2HTTP(bnClient, 1*time.Second)
 }

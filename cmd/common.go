@@ -16,8 +16,6 @@ import (
 	"github.com/spf13/viper"
 
 	"github.com/ObolNetwork/lido-dv-exit/app"
-	"github.com/ObolNetwork/lido-dv-exit/app/bnapi"
-	"github.com/ObolNetwork/lido-dv-exit/app/obolapi"
 )
 
 const (
@@ -37,7 +35,6 @@ func Run(ctx context.Context) error {
 	}
 
 	newRunCmd(root, conf, app.Run)
-	newMockServersCmd(root, bnapi.Run, obolapi.Run)
 	newVersionCmd(root)
 
 	if err := root.ExecuteContext(ctx); err != nil {
