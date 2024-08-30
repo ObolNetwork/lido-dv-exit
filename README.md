@@ -50,7 +50,7 @@ Flags:
       --log-level string            Log level; debug, info, warn or error (default "info")
       --loki-addresses strings      Enables sending of logfmt structured logs to these Loki log aggregation server addresses. This is in addition to normal stderr logs.
       --loki-service string         Service label sent with logs to Loki. (default "lido-dv-exit")
-  -o, --obol-api-url string         URL pointing to an obol API instance. (default "https://api.obol.tech")
+  -o, --obol-api-url string         URL pointing to an obol API instance. (default "https://api.obol.tech/v1")
 
 ```
 
