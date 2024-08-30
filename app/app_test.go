@@ -2,15 +2,22 @@
 package app_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"math/rand"
+	"net/http"
 	"net/http/httptest"
+	"net/http/httputil"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
+	"sync"
 	"testing"
 	"time"
 
@@ -38,19 +45,124 @@ import (
 	"github.com/ObolNetwork/lido-dv-exit/app/bnapi"
 )
 
+type beaconMockWrap struct {
+	bmock  beaconmock.Mock
+	vals   func() beaconmock.ValidatorSet
+	router http.Handler
+}
+
+func newBeaconMockWrap(t *testing.T, bmock beaconmock.Mock, vals func() beaconmock.ValidatorSet) beaconMockWrap {
+	t.Helper()
+
+	ret := beaconMockWrap{
+		bmock: bmock,
+		vals:  vals,
+	}
+
+	bmockURL, err := url.Parse(ret.bmock.Address())
+	require.NoError(t, err)
+	rp := httputil.NewSingleHostReverseProxy(bmockURL)
+
+	oldDirector := rp.Director
+
+	rp.Director = func(request *http.Request) {
+		// This function attaches request IDs for the validators path into the context, so that
+		// we can use them in the ModifyResponse handler.
+		defer oldDirector(request)
+
+		if request.URL.Path != "/eth/v1/beacon/states/head/validators" {
+			return
+		}
+
+		type req struct {
+			IDs []string `json:"ids"`
+		}
+
+		var r req
+
+		require.NoError(t, json.NewDecoder(request.Body).Decode(&r))
+
+		var writer bytes.Buffer
+		require.NoError(t, json.NewEncoder(&writer).Encode(r))
+
+		body := io.NopCloser(&writer)
+		request.Body = body
+		request.ContentLength = int64(writer.Len())
+
+		//nolint:staticcheck // test case, it's fine
+		*request = *request.WithContext(context.WithValue(request.Context(), "req_ids", r.IDs))
+	}
+
+	rp.ModifyResponse = func(response *http.Response) error {
+		if response.Request.URL.Path != "/eth/v1/beacon/states/head/validators" {
+			return nil
+		}
+
+		ctx := response.Request.Context()
+		reqIDs := ctx.Value("req_ids").([]string)
+		reqIDsMap := make(map[string]struct{})
+
+		for _, r := range reqIDs {
+			reqIDsMap[r] = struct{}{}
+		}
+
+		type getValidatorsResponse struct {
+			Data []*eth2v1.Validator `json:"data"`
+		}
+
+		set := ret.vals()
+		var resp getValidatorsResponse
+		for _, v := range set {
+			if _, ok := reqIDsMap[v.Validator.PublicKey.String()]; !ok {
+				continue
+			}
+
+			resp.Data = append(resp.Data, v)
+		}
+
+		var writer bytes.Buffer
+
+		require.NoError(t, json.NewEncoder(&writer).Encode(resp))
+
+		body := io.NopCloser(&writer)
+		response.Body = body
+		response.ContentLength = int64(writer.Len())
+		response.Header.Set("Content-Length", strconv.Itoa(writer.Len()))
+
+		return nil
+	}
+
+	ret.router = rp
+
+	return ret
+}
+
 type servers struct {
-	obolAPI *httptest.Server
-	beacon  beaconmock.Mock
+	obolAPI  *httptest.Server
+	beacon   beaconmock.Mock
+	bwrapSrv *httptest.Server
 }
 
 func (s *servers) Close() {
 	s.obolAPI.Close()
 	_ = s.beacon.Close()
+
+	if s.bwrapSrv != nil {
+		s.bwrapSrv.Close()
+	}
 }
 
-func newServers(t *testing.T, lock cluster.Lock) servers {
-	t.Helper()
+// cloneValidator returns a cloned value that is safe for modification.
+// taken from beaconmock for compat purposes.
+func cloneValidator(val *eth2v1.Validator) *eth2v1.Validator {
+	tempv1 := *val
+	tempp0 := *tempv1.Validator
+	tempv1.Validator = &tempp0
 
+	return &tempv1
+}
+
+func validatorSetFromLock(lock cluster.Lock) beaconmock.ValidatorSet {
 	vs := make(beaconmock.ValidatorSet)
 
 	for idx, dv := range lock.Validators {
@@ -72,10 +184,16 @@ func newServers(t *testing.T, lock cluster.Lock) servers {
 		}
 	}
 
+	return vs
+}
+
+func newServers(t *testing.T, lock cluster.Lock, validators func() beaconmock.ValidatorSet) servers {
+	t.Helper()
+
 	bmock, err := beaconmock.New(
 		beaconmock.WithSlotDuration(1*time.Second),
-		beaconmock.WithValidatorSet(vs),
 		beaconmock.WithForkVersion([4]byte(lock.ForkVersion)),
+		beaconmock.WithValidatorSet(validatorSetFromLock(lock)),
 	)
 	require.NoError(t, err)
 
@@ -87,10 +205,17 @@ func newServers(t *testing.T, lock cluster.Lock) servers {
 
 	oapiServer := httptest.NewServer(handler)
 
-	return servers{
+	ret := servers{
 		beacon:  bmock,
 		obolAPI: oapiServer,
 	}
+
+	if validators != nil {
+		bwrap := newBeaconMockWrap(t, ret.beacon, validators)
+		ret.bwrapSrv = httptest.NewServer(bwrap.router)
+	}
+
+	return ret
 }
 
 func Test_NormalFlow(t *testing.T) {
@@ -107,18 +232,62 @@ func Test_NormalFlow(t *testing.T) {
 		cluster.WithVersion("v1.8.0"),
 	)
 
-	srvs := newServers(t, lock)
+	srvs := newServers(t, lock, nil)
 	defer srvs.Close()
 
-	run(t,
-		t.TempDir(),
-		lock,
-		enrs,
-		keyShares,
-		true,
-		srvs,
-		false,
+	run(t, t.TempDir(), lock, enrs, keyShares, true, srvs, false)
+}
+
+func Test_NormalFlowHalfHalfSingleRun(t *testing.T) {
+	valAmt := 10
+	operatorAmt := 4
+
+	lock, enrs, keyShares := cluster.NewForT(
+		t,
+		valAmt,
+		operatorAmt,
+		operatorAmt,
+		0,
+		rand.New(rand.NewSource(0)),
+		cluster.WithVersion("v1.8.0"),
 	)
+
+	vs := validatorSetFromLock(lock)
+	var vsLock sync.Mutex
+
+	// set the first 5 as non-active
+	for i := 0; i < 5; i++ {
+		vs[eth2p0.ValidatorIndex(i+1)].Status = eth2v1.ValidatorStatePendingQueued
+	}
+
+	srvs := newServers(t, lock, func() beaconmock.ValidatorSet {
+		vsLock.Lock()
+		defer vsLock.Unlock()
+
+		cl := make(beaconmock.ValidatorSet)
+
+		for _, v := range vs {
+			cl[v.Index] = cloneValidator(v)
+		}
+
+		return cl
+	})
+
+	defer srvs.Close()
+
+	go func() {
+		// wait some time before setting everybody as read
+		time.Sleep(3 * time.Second)
+
+		vsLock.Lock()
+		// set the first 5 as active
+		for i := 0; i < 5; i++ {
+			vs[eth2p0.ValidatorIndex(i+1)].Status = eth2v1.ValidatorStateActiveOngoing
+		}
+		vsLock.Unlock()
+	}()
+
+	run(t, t.TempDir(), lock, enrs, keyShares, true, srvs, false)
 }
 
 func Test_WithNonActiveVals(t *testing.T) {
@@ -135,19 +304,11 @@ func Test_WithNonActiveVals(t *testing.T) {
 		cluster.WithVersion("v1.8.0"),
 	)
 
-	srvs := newServers(t, lock)
+	srvs := newServers(t, lock, nil)
 	defer srvs.Close()
 
 	td := t.TempDir()
-	run(t,
-		td,
-		lock,
-		enrs,
-		keyShares,
-		true,
-		srvs,
-		true,
-	)
+	run(t, td, lock, enrs, keyShares, true, srvs, true)
 }
 
 func Test_RunTwice(t *testing.T) {
@@ -164,20 +325,12 @@ func Test_RunTwice(t *testing.T) {
 		cluster.WithVersion("v1.8.0"),
 	)
 
-	srvs := newServers(t, lock)
+	srvs := newServers(t, lock, nil)
 	defer srvs.Close()
 
 	root := t.TempDir()
 
-	run(t,
-		root,
-		lock,
-		enrs,
-		keyShares,
-		true,
-		srvs,
-		false,
-	)
+	run(t, root, lock, enrs, keyShares, true, srvs, false)
 
 	// delete half exits from each ejector directory
 	ejectorDir := filepath.Join(root, "ejector")
@@ -193,17 +346,10 @@ func Test_RunTwice(t *testing.T) {
 		}
 	}
 
-	run(t,
-		root,
-		lock,
-		enrs,
-		keyShares,
-		false,
-		srvs,
-		false,
-	)
+	run(t, root, lock, enrs, keyShares, false, srvs, false)
 }
 
+//nolint:thelper // this is the real test logic
 func run(
 	t *testing.T,
 	root string,
@@ -214,7 +360,6 @@ func run(
 	servers servers,
 	withNonActiveVals bool,
 ) {
-	t.Helper()
 
 	operatorAmt := len(lock.Operators)
 
@@ -256,6 +401,11 @@ func run(
 		}
 	}
 
+	bnURL := servers.beacon.Address()
+	if servers.bwrapSrv != nil {
+		bnURL = servers.bwrapSrv.URL
+	}
+
 	runConfForIdx := func(idx int) app.Config {
 		opID := fmt.Sprintf("op%d", idx)
 
@@ -265,7 +415,7 @@ func run(
 				Format: "console",
 				Color:  "false",
 			},
-			BeaconNodeURL:           servers.beacon.Address(),
+			BeaconNodeURL:           bnURL,
 			EjectorExitPath:         filepath.Join(ejectorDir, opID),
 			CharonRuntimeDir:        filepath.Join(root, opID),
 			ObolAPIURL:              servers.obolAPI.URL,
