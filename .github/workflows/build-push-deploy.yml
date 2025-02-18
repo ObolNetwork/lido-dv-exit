@@ -39,7 +39,7 @@ jobs:
           type=ref,event=tag
 
     - name: Login to Dockerhub container registry
-      uses: docker/login-action@v2
+      uses: docker/login-action@v3
       with:
         username: obolnetwork
         password: ${{ secrets.DOCKERHUB_TOKEN }}
