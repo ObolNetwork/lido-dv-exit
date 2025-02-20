@@ -16,7 +16,7 @@ jobs:
     - uses: ./.github/actions/setup-go
     - run: go run . --help > cli-reference.txt
     - run: go run testutil/genchangelog/main.go
-    - uses: softprops/action-gh-release@v1
+    - uses: softprops/action-gh-release@v2
       with:
         draft: true
         files: cli-reference.txt
