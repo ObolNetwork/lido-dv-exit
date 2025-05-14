@@ -40,6 +40,7 @@ import (
 type Config struct {
 	Log                     log.Config
 	BeaconNodeURL           string
+	BeaconNodeHeaders       map[string]string
 	EjectorExitPath         string
 	CharonRuntimeDir        string
 	ExitEpoch               uint64
@@ -103,6 +104,7 @@ func Run(ctx context.Context, config Config) error {
 	bnClient, err := eth2Client(
 		ctx,
 		config.BeaconNodeURL,
+		config.BeaconNodeHeaders,
 		uint64(len(valsKeys)),
 		config.ValidatorQueryChunkSize,
 		[4]byte(cl.GetForkVersion()),
@@ -400,7 +402,7 @@ func postPartialExit(ctx context.Context, oAPI obolapi.Client, mutationHash []by
 	ctx, cancel := context.WithTimeout(ctx, obolAPITimeout)
 	defer cancel()
 
-	if err := oAPI.PostPartialExit(ctx, mutationHash, shareIndex, identityKey, exitBlobs...); err != nil {
+	if err := oAPI.PostPartialExits(ctx, mutationHash, shareIndex, identityKey, exitBlobs...); err != nil {
 		return errors.Wrap(err, "cannot post partial exit")
 	}
 
@@ -467,6 +469,7 @@ func sigDataForExit(ctx context.Context, exit eth2p0.VoluntaryExit, eth2Cl eth2w
 func eth2Client(
 	ctx context.Context,
 	bnURL string,
+	bnHeaders map[string]string,
 	valAmount uint64,
 	chunkSize int,
 	forkVersion [4]byte,
@@ -481,7 +484,7 @@ func eth2Client(
 		return nil, errors.Wrap(err, "can't connect to beacon node")
 	}
 
-	bnClient := eth2wrap.AdaptEth2HTTP(bnHTTPClient.(*eth2http.Service), maxBeaconNodeTimeout)
+	bnClient := eth2wrap.AdaptEth2HTTP(bnHTTPClient.(*eth2http.Service), bnHeaders, maxBeaconNodeTimeout)
 	bnClient.SetForkVersion(forkVersion)
 
 	return bnClient, nil
