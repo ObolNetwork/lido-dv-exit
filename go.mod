@@ -2,8 +2,6 @@ module github.com/ObolNetwork/lido-dv-exit
 
 go 1.24
 
-toolchain go1.24.1
-
 require (
 	github.com/attestantio/go-eth2-client v1.15.2
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.0
