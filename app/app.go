@@ -400,7 +400,7 @@ func postPartialExit(ctx context.Context, oAPI obolapi.Client, mutationHash []by
 	ctx, cancel := context.WithTimeout(ctx, obolAPITimeout)
 	defer cancel()
 
-	if err := oAPI.PostPartialExit(ctx, mutationHash, shareIndex, identityKey, exitBlobs...); err != nil {
+	if err := oAPI.PostPartialExits(ctx, mutationHash, shareIndex, identityKey, exitBlobs...); err != nil {
 		return errors.Wrap(err, "cannot post partial exit")
 	}
 
@@ -481,7 +481,7 @@ func eth2Client(
 		return nil, errors.Wrap(err, "can't connect to beacon node")
 	}
 
-	bnClient := eth2wrap.AdaptEth2HTTP(bnHTTPClient.(*eth2http.Service), maxBeaconNodeTimeout)
+	bnClient := eth2wrap.AdaptEth2HTTP(bnHTTPClient.(*eth2http.Service), nil, maxBeaconNodeTimeout)
 	bnClient.SetForkVersion(forkVersion)
 
 	return bnClient, nil
