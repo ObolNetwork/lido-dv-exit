@@ -102,7 +102,7 @@ func TestLoadManifest(t *testing.T) {
 		operatorAmt,
 		0,
 		rand.New(rand.NewSource(0)),
-		cluster.WithVersion("v1.8.0"),
+		cluster.WithVersion("v1.10.0"),
 	)
 
 	operatorShares := make([][]tbls.PrivateKey, operatorAmt)
@@ -165,7 +165,7 @@ func Test_PeerIDFromIdentity(t *testing.T) {
 		operatorAmt,
 		0,
 		rand.New(rand.NewSource(0)),
-		cluster.WithVersion("v1.8.0"),
+		cluster.WithVersion("v1.10.0"),
 	)
 
 	baseDir := t.TempDir()

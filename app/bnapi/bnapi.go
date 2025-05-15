@@ -35,6 +35,7 @@ var capellaForkMap = map[string]string{
 	"0x00000064": "0x03000064",
 	"0x90000069": "0x90000072",
 	"0x01017000": "0x04017000",
+	"0x10000910": "0x40000910",
 }
 
 // CapellaFork maps generic fork hashes to their specific Capella hardfork
