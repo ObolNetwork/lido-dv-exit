@@ -56,8 +56,8 @@ func TestKeyshareToValidatorPubkey(t *testing.T) {
 			validator.PubShares = append(validator.PubShares, sharePub[:])
 		}
 
-		rand.Shuffle(len(validator.PubShares), func(i, j int) {
-			validator.PubShares[i], validator.PubShares[j] = validator.PubShares[j], validator.PubShares[i]
+		rand.Shuffle(len(validator.GetPubShares()), func(i, j int) {
+			validator.PubShares[i], validator.PubShares[j] = validator.GetPubShares()[j], validator.GetPubShares()[i]
 		})
 
 		cl.Validators = append(cl.Validators, validator)
@@ -72,8 +72,8 @@ func TestKeyshareToValidatorPubkey(t *testing.T) {
 		valFound := false
 		sharePrivKeyFound := false
 
-		for _, val := range cl.Validators {
-			if string(valPubKey) == fmt.Sprintf("0x%x", val.PublicKey) {
+		for _, val := range cl.GetValidators() {
+			if string(valPubKey) == fmt.Sprintf("0x%x", val.GetPublicKey()) {
 				valFound = true
 				break
 			}
@@ -102,7 +102,7 @@ func TestLoadManifest(t *testing.T) {
 		operatorAmt,
 		0,
 		rand.New(rand.NewSource(0)),
-		cluster.WithVersion("v1.8.0"),
+		cluster.WithVersion("v1.10.0"),
 	)
 
 	operatorShares := make([][]tbls.PrivateKey, operatorAmt)
@@ -165,7 +165,7 @@ func Test_PeerIDFromIdentity(t *testing.T) {
 		operatorAmt,
 		0,
 		rand.New(rand.NewSource(0)),
-		cluster.WithVersion("v1.8.0"),
+		cluster.WithVersion("v1.10.0"),
 	)
 
 	baseDir := t.TempDir()

@@ -221,11 +221,11 @@ func KeyshareToValidatorPubkey(cl *manifestpb.Cluster, shares []tbls.PrivateKey)
 	}
 
 	// this is sadly a O(n^2) search
-	for _, validator := range cl.Validators {
-		valHex := fmt.Sprintf("0x%x", validator.PublicKey)
+	for _, validator := range cl.GetValidators() {
+		valHex := fmt.Sprintf("0x%x", validator.GetPublicKey())
 
 		valPubShares := make(map[tbls.PublicKey]struct{})
-		for _, valShare := range validator.PubShares {
+		for _, valShare := range validator.GetPubShares() {
 			valPubShares[tbls.PublicKey(valShare)] = struct{}{}
 		}
 
@@ -249,7 +249,7 @@ func KeyshareToValidatorPubkey(cl *manifestpb.Cluster, shares []tbls.PrivateKey)
 		}
 	}
 
-	if len(ret) != len(cl.Validators) {
+	if len(ret) != len(cl.GetValidators()) {
 		return nil, errors.New("amount of key shares don't match amount of validator public keys")
 	}
 

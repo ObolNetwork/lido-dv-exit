@@ -46,7 +46,7 @@ func Test_eth2Client(t *testing.T) {
 
 	ctx := context.Background()
 
-	client, err := eth2Client(ctx, srv.URL, 1, 1, [4]byte{0, 0, 0, 0})
+	client, err := eth2Client(ctx, srv.URL, nil, 1, 1, [4]byte{0, 0, 0, 0})
 	require.NoError(t, err)
 
 	vals, err := client.Validators(ctx, &eth2api.ValidatorsOpts{

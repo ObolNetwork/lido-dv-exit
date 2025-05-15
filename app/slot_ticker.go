@@ -20,10 +20,11 @@ import (
 //
 // Taken from Charon's core/scheduler package.
 func newSlotTicker(ctx context.Context, eth2Cl eth2wrap.Client, clock clockwork.Clock) (<-chan core.Slot, error) {
-	genesis, err := eth2Cl.GenesisTime(ctx)
+	genesisResp, err := eth2Cl.Genesis(ctx, &eth2api.GenesisOpts{})
 	if err != nil {
 		return nil, err
 	}
+	genesis := genesisResp.Data.GenesisTime
 
 	rawSpec, err := eth2Cl.Spec(ctx, &eth2api.SpecOpts{})
 	if err != nil {
