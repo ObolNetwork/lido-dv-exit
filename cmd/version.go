@@ -18,7 +18,7 @@ func newVersionCmd(root *cobra.Command) {
 	cmd := &cobra.Command{
 		Use:   "version",
 		Short: "Returns lido-dv-exit version information",
-		RunE: func(_ *cobra.Command, __ []string) error {
+		RunE: func(_ *cobra.Command, _ []string) error {
 			raw, _ := debug.ReadBuildInfo()
 
 			info := util.VCSInfoMap(raw)

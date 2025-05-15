@@ -380,7 +380,6 @@ func run(
 	servers servers,
 	withNonActiveVals bool,
 ) {
-
 	operatorAmt := len(lock.Operators)
 
 	operatorShares := make([][]tbls.PrivateKey, operatorAmt)
@@ -450,7 +449,6 @@ func run(
 	defer cancel()
 
 	for opIdx := range operatorAmt {
-		opIdx := opIdx
 		eg.Go(func() error {
 			if err := app.Run(ctx, runConfForIdx(opIdx)); err != nil {
 				return errors.Wrap(err, "app run")
@@ -479,7 +477,9 @@ func run(
 
 					ejectorDir := filepath.Join(ejectorDir, opID)
 					files, err := os.ReadDir(ejectorDir)
-					require.NoError(t, err)
+					if err != nil {
+						halfExitsErrorChan <- err
+					}
 
 					if len(files) >= len(keyShares[opIdx])/2 {
 						cancel() // stop everything, test's alright

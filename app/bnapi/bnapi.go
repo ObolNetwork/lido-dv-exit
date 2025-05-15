@@ -204,11 +204,11 @@ func MockBeaconNode(validators map[string]eth2v1.Validator) http.Handler {
 		return handlers.LoggingHandler(os.Stdout, h)
 	}
 
-	router.NotFoundHandler = logHandler(func(writer http.ResponseWriter, request *http.Request) {
+	router.NotFoundHandler = logHandler(func(writer http.ResponseWriter, _ *http.Request) {
 		writer.WriteHeader(http.StatusNotFound)
 	})
 
-	router.Handle("/eth/v1/node/syncing", logHandler(func(writer http.ResponseWriter, request *http.Request) {
+	router.Handle("/eth/v1/node/syncing", logHandler(func(writer http.ResponseWriter, _ *http.Request) {
 		s := strconv.FormatUint(slot.Load(), 10)
 		data := map[string]any{
 			"data": map[string]any{
@@ -221,7 +221,7 @@ func MockBeaconNode(validators map[string]eth2v1.Validator) http.Handler {
 		_ = json.NewEncoder(writer).Encode(data)
 	}))
 
-	router.Handle("/eth/v1/beacon/genesis", logHandler(func(writer http.ResponseWriter, request *http.Request) {
+	router.Handle("/eth/v1/beacon/genesis", logHandler(func(writer http.ResponseWriter, _ *http.Request) {
 		_ = json.NewEncoder(writer).Encode(struct {
 			Data struct {
 				GenesisTime           string `json:"genesis_time"`
@@ -241,12 +241,12 @@ func MockBeaconNode(validators map[string]eth2v1.Validator) http.Handler {
 		})
 	}))
 
-	router.Handle("/eth/v1/config/spec", logHandler(func(writer http.ResponseWriter, request *http.Request) {
+	router.Handle("/eth/v1/config/spec", logHandler(func(writer http.ResponseWriter, _ *http.Request) {
 		// Too much to be a responsible human being
 		_, _ = writer.Write(mainnetJSONSpec)
 	}))
 
-	router.Handle("/eth/v1/config/deposit_contract", logHandler(func(writer http.ResponseWriter, request *http.Request) {
+	router.Handle("/eth/v1/config/deposit_contract", logHandler(func(writer http.ResponseWriter, _ *http.Request) {
 		addressBytes, err := hex.DecodeString("07b39f4fde4a38bace212b546dac87c58dfe3fdc")
 		if err != nil {
 			panic("cannot decode static deposit contract address, impossible!")
@@ -262,7 +262,7 @@ func MockBeaconNode(validators map[string]eth2v1.Validator) http.Handler {
 		})
 	}))
 
-	router.Handle("/eth/v1/config/fork_schedule", logHandler(func(writer http.ResponseWriter, request *http.Request) {
+	router.Handle("/eth/v1/config/fork_schedule", logHandler(func(writer http.ResponseWriter, _ *http.Request) {
 		_ = json.NewEncoder(writer).Encode(struct {
 			Data []*eth2p0.Fork `json:"data"`
 		}{
@@ -291,7 +291,7 @@ func MockBeaconNode(validators map[string]eth2v1.Validator) http.Handler {
 		})
 	}))
 
-	router.Handle("/eth/v1/beacon/states/{state_id}/fork", logHandler(func(writer http.ResponseWriter, request *http.Request) {
+	router.Handle("/eth/v1/beacon/states/{state_id}/fork", logHandler(func(writer http.ResponseWriter, _ *http.Request) {
 		_ = json.NewEncoder(writer).Encode(struct {
 			Data      *eth2p0.Fork `json:"data"`
 			Finalized bool         `json:"finalized"`
@@ -305,7 +305,7 @@ func MockBeaconNode(validators map[string]eth2v1.Validator) http.Handler {
 		})
 	}))
 
-	router.Handle("/eth/v1/node/version", logHandler(func(writer http.ResponseWriter, request *http.Request) {
+	router.Handle("/eth/v1/node/version", logHandler(func(writer http.ResponseWriter, _ *http.Request) {
 		_ = json.NewEncoder(writer).Encode(struct {
 			Data struct {
 				Version string `json:"version"`
@@ -400,9 +400,10 @@ func (vsh *validatorStateHandler) getValidator(singleValidatorQuery bool) http.H
 
 			valIDs = append(valIDs, val)
 		} else {
-			if request.Method == http.MethodGet {
+			switch request.Method {
+			case http.MethodGet:
 				valIDs = request.URL.Query()["id"]
-			} else if request.Method == http.MethodPost {
+			case http.MethodPost:
 				var valBody validatorsBody
 				err := json.NewDecoder(request.Body).Decode(&valBody)
 				if err != nil {
@@ -410,7 +411,7 @@ func (vsh *validatorStateHandler) getValidator(singleValidatorQuery bool) http.H
 					return
 				}
 				valIDs = valBody.IDs
-			} else {
+			default:
 				writer.WriteHeader(http.StatusBadRequest)
 				return
 			}
@@ -434,7 +435,7 @@ func (vsh *validatorStateHandler) getValidator(singleValidatorQuery bool) http.H
 		if stateID == StateIDUnknown {
 			errBytes, err := json.Marshal(Error{
 				Code:    http.StatusBadRequest,
-				Message: fmt.Sprintf("Invalid state ID: %s", rawStateID),
+				Message: "Invalid state ID: " + rawStateID,
 			})
 			if err != nil {
 				writer.WriteHeader(http.StatusInternalServerError)

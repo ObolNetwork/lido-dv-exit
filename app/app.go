@@ -70,8 +70,8 @@ func Run(ctx context.Context, config Config) error {
 
 	// Logging labels.
 	labels := map[string]string{
-		"lde_cluster_hash": hex.EncodeToString(cl.InitialMutationHash),
-		"lde_cluster_name": cl.Name,
+		"lde_cluster_hash": hex.EncodeToString(cl.GetInitialMutationHash()),
+		"lde_cluster_name": cl.GetName(),
 		"lde_cluster_peer": p2p.PeerName(peerID),
 		"lde_version":      util.GitHash(),
 	}
@@ -172,7 +172,7 @@ func Run(ctx context.Context, config Config) error {
 			break // we finished signing everything we had to sign
 		}
 
-		if !(slot.Slot%slotModulo == 0) {
+		if slot.Slot%slotModulo != 0 {
 			log.Debug(
 				ctx,
 				"Slot not in modulo",
@@ -530,8 +530,8 @@ func loadExistingValidatorExits(ejectorPath string) (map[eth2p0.ValidatorIndex]s
 }
 
 // safeRand returns a random uint64 from 1 to max, using crypto/rand as a source.
-func safeRand(max uint64) (uint64, error) {
-	bigMax := big.NewInt(int64(max))
+func safeRand(maxRand uint64) (uint64, error) {
+	bigMax := big.NewInt(int64(maxRand))
 	zero := big.NewInt(0)
 
 	for {

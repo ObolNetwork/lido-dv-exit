@@ -20,7 +20,7 @@ func newRunCmd(root *cobra.Command, conf app.Config, entrypoint func(ctx context
 	cmd := &cobra.Command{
 		Use:   "run",
 		Short: "Runs lido-dv-exit",
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) error {
 			if err := log.InitLogger(conf.Log); err != nil {
 				return err
 			}
@@ -41,7 +41,7 @@ func newRunCmd(root *cobra.Command, conf app.Config, entrypoint func(ctx context
 	bindLogFlags(cmd.Flags(), &conf.Log)
 	bindLokiFlags(cmd.Flags(), &conf.Log)
 
-	wrapPreRunE(cmd, func(cmd *cobra.Command, args []string) error {
+	wrapPreRunE(cmd, func(_ *cobra.Command, _ []string) error {
 		if _, err := url.ParseRequestURI(conf.BeaconNodeURL); err != nil {
 			return errors.New("beacon-node-url does not contain a vaild URL")
 		}
