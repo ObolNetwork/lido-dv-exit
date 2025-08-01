@@ -4,6 +4,9 @@ package app
 
 import (
 	"context"
+	"fmt"
+	"reflect"
+	"strconv"
 	"time"
 
 	eth2api "github.com/attestantio/go-eth2-client/api"
@@ -19,6 +22,83 @@ import (
 // It is also populated with the current slot immediately.
 //
 // Taken from Charon's core/scheduler package.
+
+// parseSpecDuration extracts a duration value from spec data, handling both string and array formats.
+func parseSpecDuration(spec map[string]interface{}, key string) (time.Duration, error) {
+	value, exists := spec[key]
+	if !exists {
+		return 0, fmt.Errorf("spec key %s not found", key)
+	}
+
+	switch v := value.(type) {
+	case time.Duration:
+		return v, nil
+	case string:
+		// Try parsing as number first
+		if seconds, err := strconv.ParseInt(v, 10, 64); err == nil {
+			return time.Duration(seconds) * time.Second, nil
+		}
+		return 0, fmt.Errorf("cannot parse duration from string: %s", v)
+	case []interface{}:
+		if len(v) > 0 {
+			if str, ok := v[0].(string); ok {
+				if seconds, err := strconv.ParseInt(str, 10, 64); err == nil {
+					return time.Duration(seconds) * time.Second, nil
+				}
+			}
+		}
+		return 0, fmt.Errorf("cannot parse duration from array: %v", v)
+	default:
+		return 0, fmt.Errorf("unexpected type for %s: %T", key, v)
+	}
+}
+
+// parseSpecUint64 extracts a uint64 value from spec data, handling both direct and array formats.
+func parseSpecUint64(spec map[string]interface{}, key string) (uint64, error) {
+	value, exists := spec[key]
+	if !exists {
+		return 0, fmt.Errorf("spec key %s not found", key)
+	}
+
+	switch v := value.(type) {
+	case uint64:
+		return v, nil
+	case int64:
+		return uint64(v), nil
+	case float64:
+		return uint64(v), nil
+	case string:
+		return strconv.ParseUint(v, 10, 64)
+	case []interface{}:
+		if len(v) > 0 {
+			switch firstElem := v[0].(type) {
+			case uint64:
+				return firstElem, nil
+			case int64:
+				return uint64(firstElem), nil
+			case float64:
+				return uint64(firstElem), nil
+			case string:
+				return strconv.ParseUint(firstElem, 10, 64)
+			}
+		}
+		return 0, fmt.Errorf("cannot parse uint64 from array: %v", v)
+	default:
+		// Use reflection as fallback for other numeric types
+		rv := reflect.ValueOf(v)
+		if rv.Kind() >= reflect.Int && rv.Kind() <= reflect.Int64 {
+			return uint64(rv.Int()), nil
+		}
+		if rv.Kind() >= reflect.Uint && rv.Kind() <= reflect.Uint64 {
+			return rv.Uint(), nil
+		}
+		if rv.Kind() == reflect.Float32 || rv.Kind() == reflect.Float64 {
+			return uint64(rv.Float()), nil
+		}
+		return 0, fmt.Errorf("unexpected type for %s: %T", key, v)
+	}
+}
+
 func newSlotTicker(ctx context.Context, eth2Cl eth2wrap.Client, clock clockwork.Clock) (<-chan core.Slot, error) {
 	genesisResp, err := eth2Cl.Genesis(ctx, &eth2api.GenesisOpts{})
 	if err != nil {
@@ -32,14 +112,14 @@ func newSlotTicker(ctx context.Context, eth2Cl eth2wrap.Client, clock clockwork.
 	}
 	spec := rawSpec.Data
 
-	slotDuration, ok := spec["SECONDS_PER_SLOT"].(time.Duration)
-	if !ok {
-		return nil, errors.New("fetch slot duration")
+	slotDuration, err := parseSpecDuration(spec, "SECONDS_PER_SLOT")
+	if err != nil {
+		return nil, errors.Wrap(err, "fetch slot duration")
 	}
 
-	slotsPerEpoch, ok := spec["SLOTS_PER_EPOCH"].(uint64)
-	if !ok {
-		return nil, errors.New("fetch slots per epoch")
+	slotsPerEpoch, err := parseSpecUint64(spec, "SLOTS_PER_EPOCH")
+	if err != nil {
+		return nil, errors.Wrap(err, "fetch slots per epoch")
 	}
 
 	currentSlot := func() core.Slot {
