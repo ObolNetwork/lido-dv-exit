@@ -94,12 +94,14 @@ func ComputeDomain(forkHash string, domainType eth2p0.DomainType, genesisValidat
 	}
 
 	rawFdt := forkDataType{GenesisValidatorsRoot: genesisValidatorRoot, CurrentVersion: [4]byte(fb)}
+
 	fdt, err := rawFdt.HashTreeRoot()
 	if err != nil {
 		return eth2p0.Domain{}, errors.Wrap(err, "fork data type hash tree root")
 	}
 
 	var domain []byte
+
 	domain = append(domain, domainType[:]...)
 	domain = append(domain, fdt[:28]...)
 
@@ -174,7 +176,8 @@ func Run(_ context.Context, validators map[string]eth2v1.Validator, bindAddr str
 		Addr:              bindAddr,
 	}
 
-	if err := srv.ListenAndServe(); err != nil {
+	err := srv.ListenAndServe()
+	if err != nil {
 		return errors.Wrap(err, "beacon node mock error")
 	}
 
@@ -346,7 +349,8 @@ func (vsh *validatorStateHandler) exitValidator(slotCounter *atomic.Uint64) http
 
 		var exitMsg eth2p0.SignedVoluntaryExit
 
-		if err := json.NewDecoder(request.Body).Decode(&exitMsg); err != nil {
+		err := json.NewDecoder(request.Body).Decode(&exitMsg)
+		if err != nil {
 			errBytes, err := json.Marshal(Error{
 				Code:    http.StatusBadRequest,
 				Message: "Bad Request",
@@ -361,6 +365,7 @@ func (vsh *validatorStateHandler) exitValidator(slotCounter *atomic.Uint64) http
 		}
 
 		vIdxStr := strconv.FormatUint(uint64(exitMsg.Message.ValidatorIndex), 10)
+
 		validator, ok := vsh.validators[vIdxStr]
 		if !ok {
 			validatorNotFound(writer)
@@ -405,11 +410,13 @@ func (vsh *validatorStateHandler) getValidator(singleValidatorQuery bool) http.H
 				valIDs = request.URL.Query()["id"]
 			case http.MethodPost:
 				var valBody validatorsBody
+
 				err := json.NewDecoder(request.Body).Decode(&valBody)
 				if err != nil {
 					writer.WriteHeader(http.StatusBadRequest)
 					return
 				}
+
 				valIDs = valBody.IDs
 			default:
 				writer.WriteHeader(http.StatusBadRequest)
@@ -480,7 +487,8 @@ func (vsh *validatorStateHandler) getValidator(singleValidatorQuery bool) http.H
 			ret = c
 		}
 
-		if err := json.NewEncoder(writer).Encode(ret); err != nil {
+		err := json.NewEncoder(writer).Encode(ret)
+		if err != nil {
 			errBytes, _ := json.Marshal(Error{ // ignoring error here since we'll write 500 regardless
 				Code:    http.StatusInternalServerError,
 				Message: "Internal server error",

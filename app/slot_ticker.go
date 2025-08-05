@@ -24,12 +24,14 @@ func newSlotTicker(ctx context.Context, eth2Cl eth2wrap.Client, clock clockwork.
 	if err != nil {
 		return nil, err
 	}
+
 	genesis := genesisResp.Data.GenesisTime
 
 	rawSpec, err := eth2Cl.Spec(ctx, &eth2api.SpecOpts{})
 	if err != nil {
 		return nil, err
 	}
+
 	spec := rawSpec.Data
 
 	slotDuration, ok := spec["SECONDS_PER_SLOT"].(time.Duration)
@@ -56,8 +58,10 @@ func newSlotTicker(ctx context.Context, eth2Cl eth2wrap.Client, clock clockwork.
 	}
 
 	resp := make(chan core.Slot)
+
 	go func() {
 		slot := currentSlot()
+
 		for {
 			select {
 			case <-ctx.Done():

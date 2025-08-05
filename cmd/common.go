@@ -37,7 +37,8 @@ func Run(ctx context.Context) error {
 	newRunCmd(root, conf, app.Run)
 	newVersionCmd(root)
 
-	if err := root.ExecuteContext(ctx); err != nil {
+	err := root.ExecuteContext(ctx)
+	if err != nil {
 		return errors.Wrap(err, "run error")
 	}
 
@@ -47,6 +48,7 @@ func Run(ctx context.Context) error {
 // flagsToLogFields converts the given flags to log fields.
 func flagsToLogFields(flags *pflag.FlagSet) []z.Field {
 	var fields []z.Field
+
 	flags.VisitAll(func(flag *pflag.Flag) {
 		val := redact(flag.Name, flag.Value.String())
 
@@ -55,6 +57,7 @@ func flagsToLogFields(flags *pflag.FlagSet) []z.Field {
 			for _, s := range sliceVal.GetSlice() {
 				vals = append(vals, redact(flag.Name, s))
 			}
+
 			val = "[" + strings.Join(vals, ",") + "]"
 		}
 
@@ -121,7 +124,8 @@ func initializeConfig(cmd *cobra.Command) error {
 	// Attempt to read the config file, gracefully ignoring errors
 	// caused by a config file not being found. Return an error
 	// if we cannot parse the config file.
-	if err := v.ReadInConfig(); err != nil {
+	err := v.ReadInConfig()
+	if err != nil {
 		// It's okay if there isn't a config file
 		var cfgError viper.ConfigFileNotFoundError
 		if ok := errors.As(err, &cfgError); !ok {
@@ -159,6 +163,7 @@ func bindFlags(cmd *cobra.Command, v *viper.Viper) error {
 			}
 
 			val := v.Get(name)
+
 			err := cmd.Flags().Set(f.Name, fmt.Sprintf("%v", val))
 			if err != nil {
 				lastErr = err
