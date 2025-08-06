@@ -41,6 +41,7 @@ func TestKeyshareToValidatorPubkey(t *testing.T) {
 		}
 
 		randomShareSelected := false
+
 		for shareIdx := 0; shareIdx < sharesAmt; shareIdx++ {
 			sharePriv, err := tbls.GenerateSecretKey()
 			require.NoError(t, err)

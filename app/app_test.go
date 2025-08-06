@@ -61,6 +61,7 @@ func newBeaconMockWrap(t *testing.T, bmock beaconmock.Mock, vals func() beaconmo
 
 	bmockURL, err := url.Parse(ret.bmock.Address())
 	require.NoError(t, err)
+
 	rp := httputil.NewSingleHostReverseProxy(bmockURL)
 
 	oldDirector := rp.Director
@@ -111,7 +112,9 @@ func newBeaconMockWrap(t *testing.T, bmock beaconmock.Mock, vals func() beaconmo
 		}
 
 		set := ret.vals()
+
 		var resp getValidatorsResponse
+
 		for _, v := range set {
 			if _, ok := reqIDsMap[v.Validator.PublicKey.String()]; !ok {
 				continue
@@ -221,6 +224,7 @@ func newServers(t *testing.T, lock cluster.Lock, validators func() beaconmock.Va
 func Test_NormalFlow(t *testing.T) {
 	// TODO (kalo): WithForkVersion function is still missing from v1.4.3. Once it's added in v1.5, remove this skip.
 	t.Skip()
+
 	valAmt := 100
 	operatorAmt := 4
 	// fv, err := hex.DecodeString(strings.TrimPrefix(eth2util.Holesky.GenesisForkVersionHex, "0x"))
@@ -246,6 +250,7 @@ func Test_NormalFlow(t *testing.T) {
 func Test_NormalFlowHalfHalfSingleRun(t *testing.T) {
 	// TODO (kalo): WithForkVersion function is still missing from v1.4.3. Once it's added in v1.5, remove this skip.
 	t.Skip()
+
 	valAmt := 10
 	operatorAmt := 4
 	// fv, err := hex.DecodeString(strings.TrimPrefix(eth2util.Holesky.GenesisForkVersionHex, "0x"))
@@ -263,6 +268,7 @@ func Test_NormalFlowHalfHalfSingleRun(t *testing.T) {
 	)
 
 	vs := validatorSetFromLock(lock)
+
 	var vsLock sync.Mutex
 
 	// set the first 5 as non-active
@@ -294,6 +300,7 @@ func Test_NormalFlowHalfHalfSingleRun(t *testing.T) {
 		for i := 0; i < 5; i++ {
 			vs[eth2p0.ValidatorIndex(i+1)].Status = eth2v1.ValidatorStateActiveOngoing
 		}
+
 		vsLock.Unlock()
 	}()
 
@@ -303,6 +310,7 @@ func Test_NormalFlowHalfHalfSingleRun(t *testing.T) {
 func Test_WithNonActiveVals(t *testing.T) {
 	// TODO (kalo): WithForkVersion function is still missing from v1.4.3. Once it's added in v1.5, remove this skip.
 	t.Skip()
+
 	valAmt := 100
 	operatorAmt := 4
 	// fv, err := hex.DecodeString(strings.TrimPrefix(eth2util.Holesky.GenesisForkVersionHex, "0x"))
@@ -329,6 +337,7 @@ func Test_WithNonActiveVals(t *testing.T) {
 func Test_RunTwice(t *testing.T) {
 	// TODO (kalo): WithForkVersion function is still missing from v1.4.3. Once it's added in v1.5, remove this skip.
 	t.Skip()
+
 	valAmt := 4
 	operatorAmt := 4
 	// fv, err := hex.DecodeString(strings.TrimPrefix(eth2util.Holesky.GenesisForkVersionHex, "0x"))
@@ -450,7 +459,8 @@ func run(
 
 	for opIdx := range operatorAmt {
 		eg.Go(func() error {
-			if err := app.Run(ctx, runConfForIdx(opIdx)); err != nil {
+			err := app.Run(ctx, runConfForIdx(opIdx))
+			if err != nil {
 				return errors.Wrap(err, "app run")
 			}
 
@@ -476,6 +486,7 @@ func run(
 					opID := fmt.Sprintf("op%d", opIdx)
 
 					ejectorDir := filepath.Join(ejectorDir, opID)
+
 					files, err := os.ReadDir(ejectorDir)
 					if err != nil {
 						halfExitsErrorChan <- err
@@ -483,10 +494,13 @@ func run(
 
 					if len(files) >= len(keyShares[opIdx])/2 {
 						cancel() // stop everything, test's alright
+
 						halfExitsErrorChan <- nil
+
 						stop = true
 					}
 				}
+
 				runtime.Gosched() // yield a little
 			}
 		}()
@@ -497,6 +511,7 @@ func run(
 		select {
 		case err := <-egErrorChan:
 			require.NoError(t, err)
+
 			stop = true
 
 		case err := <-halfExitsErrorChan:

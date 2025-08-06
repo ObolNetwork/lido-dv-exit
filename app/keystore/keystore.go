@@ -105,6 +105,7 @@ func LoadManifest(dir string) (*manifestpb.Cluster, []tbls.PrivateKey, error) {
 	}
 
 	vcdPath := filepath.Join(dir, "validator_keys")
+
 	_, err = os.ReadDir(vcdPath)
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "can't read validator_keys directory")
@@ -153,6 +154,7 @@ func ShareIdxForCluster(dir string, cl *manifestpb.Cluster) (uint64, error) {
 	k := crypto.Secp256k1PublicKey(*idKey.PubKey)
 
 	shareIdx := -1
+
 	for _, pid := range pids {
 		if !pid.MatchesPublicKey(&k) {
 			continue
@@ -230,6 +232,7 @@ func KeyshareToValidatorPubkey(cl *manifestpb.Cluster, shares []tbls.PrivateKey)
 		}
 
 		found := false
+
 		for shareIdx, share := range pubShares {
 			if _, ok := valPubShares[share]; !ok {
 				continue
