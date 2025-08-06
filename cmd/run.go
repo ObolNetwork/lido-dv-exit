@@ -21,7 +21,8 @@ func newRunCmd(root *cobra.Command, conf app.Config, entrypoint func(ctx context
 		Use:   "run",
 		Short: "Runs lido-dv-exit",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			if err := log.InitLogger(conf.Log); err != nil {
+			err := log.InitLogger(conf.Log)
+			if err != nil {
 				return err
 			}
 
@@ -42,7 +43,8 @@ func newRunCmd(root *cobra.Command, conf app.Config, entrypoint func(ctx context
 	bindLokiFlags(cmd.Flags(), &conf.Log)
 
 	wrapPreRunE(cmd, func(_ *cobra.Command, _ []string) error {
-		if _, err := url.ParseRequestURI(conf.BeaconNodeURL); err != nil {
+		_, err := url.ParseRequestURI(conf.BeaconNodeURL)
+		if err != nil {
 			return errors.New("beacon-node-url does not contain a vaild URL")
 		}
 
@@ -50,14 +52,18 @@ func newRunCmd(root *cobra.Command, conf app.Config, entrypoint func(ctx context
 			return errors.New("validator query chunk size cannot be less or equal to 0")
 		}
 
-		if err := dirWritable(conf.EjectorExitPath); err != nil {
-			return errors.Wrap(err, "can't access ejector exit path")
-		}
-		if err := dirWritable(conf.EjectorExitPath); err != nil {
+		err = dirWritable(conf.EjectorExitPath)
+		if err != nil {
 			return errors.Wrap(err, "can't access ejector exit path")
 		}
 
-		if err := dirWritable(conf.CharonRuntimeDir); err != nil {
+		err = dirWritable(conf.EjectorExitPath)
+		if err != nil {
+			return errors.Wrap(err, "can't access ejector exit path")
+		}
+
+		err = dirWritable(conf.CharonRuntimeDir)
+		if err != nil {
 			return errors.Wrap(err, "can't access charon runtime directory")
 		}
 
@@ -71,11 +77,13 @@ func dirWritable(dir string) error {
 	testFile := filepath.Join(dir, ".test-file")
 
 	//nolint:gosec // test file, will be deleted immediately
-	if err := os.WriteFile(testFile, []byte("testfile"), 0o755); err != nil {
+	err := os.WriteFile(testFile, []byte("testfile"), 0o755)
+	if err != nil {
 		return errors.Wrap(err, "directory access")
 	}
 
-	if err := os.Remove(testFile); err != nil {
+	err = os.Remove(testFile)
+	if err != nil {
 		return errors.Wrap(err, "testfile removal")
 	}
 

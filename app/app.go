@@ -146,6 +146,7 @@ func Run(ctx context.Context, config Config) error {
 	}
 
 	var signedExits []obolapi.ExitBlob
+
 	fetchedSignedExits := map[string]struct{}{}
 
 	for slot := range slotTicker {
@@ -244,6 +245,7 @@ func Run(ctx context.Context, config Config) error {
 			}
 
 			log.Info(ctx, "Signed partial exit")
+
 			signedExitsInRound = append(signedExitsInRound, obolapi.ExitBlob{
 				PublicKey:         validatorPubkStr,
 				SignedExitMessage: exit,
@@ -252,7 +254,8 @@ func Run(ctx context.Context, config Config) error {
 
 		if len(signedExitsInRound) != 0 {
 			// try posting the partial exits that have been produced at this stage
-			if err := postPartialExit(ctx, oAPI, cl.GetInitialMutationHash(), shareIdx, identityKey, signedExitsInRound...); err != nil {
+			err := postPartialExit(ctx, oAPI, cl.GetInitialMutationHash(), shareIdx, identityKey, signedExitsInRound...)
+			if err != nil {
 				log.Error(ctx, "Cannot post exits to obol api, will retry later", err)
 			} else {
 				for _, signedExit := range signedExitsInRound {
@@ -382,14 +385,16 @@ func fetchFullExit(
 		return false
 	}
 
-	if err := tbls.Verify(pubkey, exitRoot[:], signature); err != nil {
+	err = tbls.Verify(pubkey, exitRoot[:], signature)
+	if err != nil {
 		log.Error(ctx, "Exit message signature not verified", err)
 
 		return false
 	}
 
 	//nolint:gosec // must be wide open
-	if err := os.WriteFile(exitFSPath, data, 0o755); err != nil {
+	err = os.WriteFile(exitFSPath, data, 0o755)
+	if err != nil {
 		log.Warn(ctx, "Cannot write exit to filesystem path", err, z.Str("destination_path", exitFSPath))
 		return false
 	}
@@ -402,7 +407,8 @@ func postPartialExit(ctx context.Context, oAPI obolapi.Client, mutationHash []by
 	ctx, cancel := context.WithTimeout(ctx, obolAPITimeout)
 	defer cancel()
 
-	if err := oAPI.PostPartialExits(ctx, mutationHash, shareIndex, identityKey, exitBlobs...); err != nil {
+	err := oAPI.PostPartialExits(ctx, mutationHash, shareIndex, identityKey, exitBlobs...)
+	if err != nil {
 		return errors.Wrap(err, "cannot post partial exit")
 	}
 
@@ -519,7 +525,9 @@ func loadExistingValidatorExits(ejectorPath string) (map[eth2p0.ValidatorIndex]s
 		}
 
 		var exit eth2p0.SignedVoluntaryExit
-		if err := json.Unmarshal(exitBytes, &exit); err != nil {
+
+		err = json.Unmarshal(exitBytes, &exit)
+		if err != nil {
 			return nil, errors.Wrap(err, "unmarshal exit file", z.Str("path", ep))
 		}
 
