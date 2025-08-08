@@ -5,7 +5,7 @@ go 1.24
 require (
 	github.com/attestantio/go-eth2-client v0.26.0
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.0
-	github.com/ferranbt/fastssz v0.1.4
+	github.com/ferranbt/fastssz v1.0.0
 	github.com/gorilla/handlers v1.5.2
 	github.com/gorilla/mux v1.8.1
 	github.com/jonboulle/clockwork v0.5.0
