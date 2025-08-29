@@ -59,7 +59,7 @@ func Test_eth2Client(t *testing.T) {
 }
 
 func Test_newSlotTicker(t *testing.T) {
-	mock, err := beaconmock.New(beaconmock.WithSlotDuration(1 * time.Second))
+	mock, err := beaconmock.New(t.Context(), beaconmock.WithSlotDuration(1*time.Second))
 	require.NoError(t, err)
 
 	defer func() {
