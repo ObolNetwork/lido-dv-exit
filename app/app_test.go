@@ -194,6 +194,7 @@ func newServers(t *testing.T, lock cluster.Lock, validators func() beaconmock.Va
 	t.Helper()
 
 	bmock, err := beaconmock.New(
+		t.Context(),
 		beaconmock.WithSlotDuration(1*time.Second),
 		beaconmock.WithForkVersion([4]byte(lock.ForkVersion)),
 		beaconmock.WithValidatorSet(validatorSetFromLock(lock)),

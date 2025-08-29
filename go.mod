@@ -185,3 +185,9 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	lukechampine.com/blake3 v1.4.1 // indirect
 )
+
+// We're replacing kryptology with our own fork, which fixes dependencies' security vulnerabilities.
+replace github.com/coinbase/kryptology => github.com/ObolNetwork/kryptology v0.1.0
+
+// We're replacing go-eth2-client with a branch off our fork. The branch is kept up to date with the latest attestantio versions.
+replace github.com/attestantio/go-eth2-client => github.com/ObolNetwork/go-eth2-client v0.26.0-obol.2 //nolint
