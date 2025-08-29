@@ -1,6 +1,6 @@
 module github.com/ObolNetwork/lido-dv-exit
 
-go 1.24
+go 1.25
 
 require (
 	github.com/attestantio/go-eth2-client v0.26.0
