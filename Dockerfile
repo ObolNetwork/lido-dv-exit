@@ -1,5 +1,5 @@
 # Container for building Go binary.
-FROM golang:1.24.3-bookworm AS builder
+FROM golang:1.25.0-bookworm AS builder
 # Install dependencies
 RUN apt-get update && apt-get install -y build-essential git
 # Prep and copy source
@@ -11,9 +11,9 @@ ENV GO_BUILD_FLAG=${GO_BUILD_FLAG}
 RUN echo "Building with GO_BUILD_FLAG='${GO_BUILD_FLAG}'"
 # Build with Go module and Go build caches.
 RUN \
-   --mount=type=cache,target=/go/pkg \
-   --mount=type=cache,target=/root/.cache/go-build \
-   go build -o lido-dv-exit "${GO_BUILD_FLAG}" .
+    --mount=type=cache,target=/go/pkg \
+    --mount=type=cache,target=/root/.cache/go-build \
+    go build -o lido-dv-exit "${GO_BUILD_FLAG}" .
 RUN echo "Built lido-dv-exit version=$(./lido-dv-exit version)"
 
 # Copy final binary into light stage.
