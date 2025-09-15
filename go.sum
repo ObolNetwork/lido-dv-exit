@@ -331,8 +331,8 @@ github.com/neelance/astrewrite v0.0.0-20160511093645-99348263ae86/go.mod h1:kHJE
 github.com/neelance/sourcemap v0.0.0-20151028013722-8c68805598ab/go.mod h1:Qr6/a/Q4r9LP1IltGz7tA7iOK1WonHEYhu1HRBA7ZiM=
 github.com/oapi-codegen/runtime v1.1.1 h1:EXLHh0DXIJnWhdRPN2w4MXAzFyE4CskzhNLUmtpMYro=
 github.com/oapi-codegen/runtime v1.1.1/go.mod h1:SK9X900oXmPWilYR5/WKPzt3Kqxn/uS/+lbpREv+eCg=
-github.com/obolnetwork/charon v1.6.0 h1:N5ZHd4Ts7dloNCCZOHNlw3TR7iEg35upJK695q8GRWE=
-github.com/obolnetwork/charon v1.6.0/go.mod h1:FkjeQFPjNKOa3JPbHBsi29Y0SDSizcigyyX03Su4Jcs=
+github.com/obolnetwork/charon v1.6.1 h1:fURcA2EPqnvpKCdtFJU1k7K1GZjeztLfgFO8T+EKa+4=
+github.com/obolnetwork/charon v1.6.1/go.mod h1:FkjeQFPjNKOa3JPbHBsi29Y0SDSizcigyyX03Su4Jcs=
 github.com/olekukonko/tablewriter v0.0.5 h1:P2Ga83D34wi1o9J6Wh1mRuqd4mF/x/lgBS7N7AbDhec=
 github.com/olekukonko/tablewriter v0.0.5/go.mod h1:hPp6KlRPjbx+hW8ykQs1w3UBbZlj6HuIJcUGPhkA7kY=
 github.com/onsi/ginkgo/v2 v2.23.3 h1:edHxnszytJ4lD9D5Jjc4tiDkPBZ3siDeJJkUZJJVkp0=
