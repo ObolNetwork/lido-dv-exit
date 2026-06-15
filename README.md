@@ -41,7 +41,7 @@ Usage:
 
 Flags:
   -b, --beacon-node-url string      URL pointing to a running ethereum beacon node.
-  -c, --charon-runtime-dir string   Charon directory, containing the validator_keys directory and manifest file or lock file.
+  -c, --charon-runtime-dir string   Charon directory, containing the validator_keys directory and cluster-lock.json file.
   -e, --ejector-exit-path string    Filesystem path to store full exit.
       --exit-epoch uint             Epoch to exit validators at. (default 194048)
   -h, --help                        help for run

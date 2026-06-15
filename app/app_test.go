@@ -31,7 +31,6 @@ import (
 	"github.com/obolnetwork/charon/app/k1util"
 	"github.com/obolnetwork/charon/app/log"
 	"github.com/obolnetwork/charon/cluster"
-	"github.com/obolnetwork/charon/cluster/manifest"
 	ckeystore "github.com/obolnetwork/charon/eth2util/keystore"
 	"github.com/obolnetwork/charon/tbls"
 	"github.com/obolnetwork/charon/testutil/beaconmock"
@@ -39,7 +38,6 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
-	"google.golang.org/protobuf/proto"
 
 	"github.com/ObolNetwork/lido-dv-exit/app"
 	"github.com/ObolNetwork/lido-dv-exit/app/bnapi"
@@ -298,7 +296,7 @@ func Test_NormalFlowHalfHalfSingleRun(t *testing.T) {
 
 		vsLock.Lock()
 		// set the first 5 as active
-		for i := 0; i < 5; i++ {
+		for i := range 5 {
 			vs[eth2p0.ValidatorIndex(i+1)].Status = eth2v1.ValidatorStateActiveOngoing
 		}
 
@@ -394,16 +392,13 @@ func run(
 
 	operatorShares := make([][]tbls.PrivateKey, operatorAmt)
 
-	for opIdx := 0; opIdx < operatorAmt; opIdx++ {
+	for opIdx := range operatorAmt {
 		for _, share := range keyShares {
 			operatorShares[opIdx] = append(operatorShares[opIdx], share[opIdx])
 		}
 	}
 
-	dag, err := manifest.NewDAGFromLockForT(t, lock)
-	require.NoError(t, err)
-
-	mBytes, err := proto.Marshal(dag)
+	lockBytes, err := json.Marshal(lock)
 	require.NoError(t, err)
 
 	ejectorDir := filepath.Join(root, "ejector")
@@ -417,7 +412,7 @@ func run(
 			oDir := filepath.Join(root, opID)
 			eDir := filepath.Join(ejectorDir, opID)
 			keysDir := filepath.Join(oDir, "validator_keys")
-			manifestFile := filepath.Join(oDir, "cluster-manifest.pb")
+			lockFile := filepath.Join(oDir, "cluster-lock.json")
 
 			require.NoError(t, os.MkdirAll(oDir, 0o755))
 			require.NoError(t, k1util.Save(enrs[opIdx], filepath.Join(oDir, "charon-enr-private-key")))
@@ -426,7 +421,7 @@ func run(
 			require.NoError(t, os.MkdirAll(eDir, 0o755))
 
 			require.NoError(t, ckeystore.StoreKeysInsecure(operatorShares[opIdx], keysDir, ckeystore.ConfirmInsecureKeys))
-			require.NoError(t, os.WriteFile(manifestFile, mBytes, 0o755))
+			require.NoError(t, os.WriteFile(lockFile, lockBytes, 0o755))
 		}
 	}
 

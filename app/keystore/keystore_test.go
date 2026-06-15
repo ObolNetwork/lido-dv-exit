@@ -5,6 +5,7 @@ package keystore_test
 import (
 	"bytes"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"math/rand"
 	"os"
@@ -12,14 +13,11 @@ import (
 	"testing"
 
 	"github.com/obolnetwork/charon/cluster"
-	"github.com/obolnetwork/charon/cluster/manifest"
-	manifestpb "github.com/obolnetwork/charon/cluster/manifestpb/v1"
 	ckeystore "github.com/obolnetwork/charon/eth2util/keystore"
 	"github.com/obolnetwork/charon/tbls"
 	"github.com/obolnetwork/charon/tbls/tblsconv"
 	"github.com/obolnetwork/charon/testutil"
 	"github.com/stretchr/testify/require"
-	"google.golang.org/protobuf/proto"
 
 	"github.com/ObolNetwork/lido-dv-exit/app/keystore"
 )
@@ -30,19 +28,19 @@ func TestKeyshareToValidatorPubkey(t *testing.T) {
 
 	privateShares := make([]tbls.PrivateKey, valAmt)
 
-	cl := &manifestpb.Cluster{}
+	cl := &cluster.Lock{}
 
-	for valIdx := 0; valIdx < valAmt; valIdx++ {
+	for valIdx := range valAmt {
 		valPubk, err := tblsconv.PubkeyFromCore(testutil.RandomCorePubKey(t))
 		require.NoError(t, err)
 
-		validator := &manifestpb.Validator{
-			PublicKey: valPubk[:],
+		validator := cluster.DistValidator{
+			PubKey: valPubk[:],
 		}
 
 		randomShareSelected := false
 
-		for shareIdx := 0; shareIdx < sharesAmt; shareIdx++ {
+		for range sharesAmt {
 			sharePriv, err := tbls.GenerateSecretKey()
 			require.NoError(t, err)
 
@@ -57,8 +55,8 @@ func TestKeyshareToValidatorPubkey(t *testing.T) {
 			validator.PubShares = append(validator.PubShares, sharePub[:])
 		}
 
-		rand.Shuffle(len(validator.GetPubShares()), func(i, j int) {
-			validator.PubShares[i], validator.PubShares[j] = validator.GetPubShares()[j], validator.GetPubShares()[i]
+		rand.Shuffle(len(validator.PubShares), func(i, j int) {
+			validator.PubShares[i], validator.PubShares[j] = validator.PubShares[j], validator.PubShares[i]
 		})
 
 		cl.Validators = append(cl.Validators, validator)
@@ -73,8 +71,8 @@ func TestKeyshareToValidatorPubkey(t *testing.T) {
 		valFound := false
 		sharePrivKeyFound := false
 
-		for _, val := range cl.GetValidators() {
-			if string(valPubKey) == fmt.Sprintf("0x%x", val.GetPublicKey()) {
+		for _, val := range cl.Validators {
+			if string(valPubKey) == fmt.Sprintf("0x%x", val.PubKey) {
 				valFound = true
 				break
 			}
@@ -108,48 +106,36 @@ func TestLoadManifest(t *testing.T) {
 
 	operatorShares := make([][]tbls.PrivateKey, operatorAmt)
 
-	for opIdx := 0; opIdx < operatorAmt; opIdx++ {
+	for opIdx := range operatorAmt {
 		for _, share := range keyShares {
 			operatorShares[opIdx] = append(operatorShares[opIdx], share[opIdx])
 		}
 	}
 
-	dag, err := manifest.NewDAGFromLockForT(t, lock)
-	require.NoError(t, err)
-
-	mBytes, err := proto.Marshal(dag)
-	require.NoError(t, err)
-
-	cl, err := manifest.Materialise(dag)
-	require.NoError(t, err)
-
-	clBytes, err := proto.Marshal(cl)
+	lockBytes, err := json.Marshal(lock)
 	require.NoError(t, err)
 
 	baseDir := t.TempDir()
 
-	for opIdx := 0; opIdx < operatorAmt; opIdx++ {
+	for opIdx := range operatorAmt {
 		oDir := filepath.Join(baseDir, fmt.Sprintf("op%d", opIdx))
 		keysDir := filepath.Join(oDir, "validator_keys")
-		manifestFile := filepath.Join(oDir, "cluster-manifest.pb")
+		lockFile := filepath.Join(oDir, "cluster-lock.json")
 
 		require.NoError(t, os.MkdirAll(keysDir, 0o755))
 
 		require.NoError(t, ckeystore.StoreKeysInsecure(operatorShares[opIdx], keysDir, ckeystore.ConfirmInsecureKeys))
-		require.NoError(t, os.WriteFile(manifestFile, mBytes, 0o755))
+		require.NoError(t, os.WriteFile(lockFile, lockBytes, 0o755))
 
-		readCl, readKeys, err := keystore.LoadManifest(oDir)
+		readCl, readKeys, err := keystore.LoadManifest(t.Context(), oDir)
 		require.NoError(t, err)
 
-		readMBytes, err := proto.Marshal(readCl)
-		require.NoError(t, err)
-
-		require.Equal(t, clBytes, readMBytes)
+		require.Equal(t, lock.LockHash, readCl.LockHash)
 		require.Equal(t, operatorShares[opIdx], readKeys)
 	}
 
 	for _, opKeys := range operatorShares {
-		m, err := keystore.KeyshareToValidatorPubkey(cl, opKeys)
+		m, err := keystore.KeyshareToValidatorPubkey(&lock, opKeys)
 		require.NoError(t, err)
 		require.Len(t, m, valAmt)
 	}
@@ -171,7 +157,7 @@ func Test_PeerIDFromIdentity(t *testing.T) {
 
 	baseDir := t.TempDir()
 
-	for opIdx := 0; opIdx < operatorAmt; opIdx++ {
+	for opIdx := range operatorAmt {
 		oDir := filepath.Join(baseDir, fmt.Sprintf("op%d", opIdx))
 		idKeyFile := filepath.Join(oDir, "charon-enr-private-key")
 		require.NoError(t, os.MkdirAll(oDir, 0o755))

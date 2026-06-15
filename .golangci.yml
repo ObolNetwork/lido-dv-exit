@@ -132,8 +132,8 @@ linters:
             - github.com/prometheus/client_golang/prometheus/promauto
     staticcheck:
       checks:
-        - -SA1019
         - all
+        - -SA1019
     testifylint:
       disable:
         - expected-actual
