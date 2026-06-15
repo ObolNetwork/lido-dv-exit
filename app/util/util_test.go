@@ -20,7 +20,7 @@ func TestValidatorPubkeyToBytes(t *testing.T) {
 		wantErr bool
 	}{
 		{
-			"empty input",
+			"empty input", //nolint:goconst // no need for consts in test cases
 			"",
 			nil,
 			true,
