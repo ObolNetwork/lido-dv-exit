@@ -12,6 +12,7 @@ import (
 	"math/big"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	eth2api "github.com/attestantio/go-eth2-client/api"
@@ -25,7 +26,7 @@ import (
 	"github.com/obolnetwork/charon/app/log"
 	"github.com/obolnetwork/charon/app/obolapi"
 	"github.com/obolnetwork/charon/app/z"
-	manifestpb "github.com/obolnetwork/charon/cluster/manifestpb/v1"
+	"github.com/obolnetwork/charon/cluster"
 	"github.com/obolnetwork/charon/eth2util/signing"
 	"github.com/obolnetwork/charon/p2p"
 	"github.com/obolnetwork/charon/tbls"
@@ -51,6 +52,10 @@ type Config struct {
 const (
 	maxBeaconNodeTimeout = 10 * time.Second
 	obolAPITimeout       = 10 * time.Second
+
+	// exitFilePrefix is the file name prefix of the per-validator exit files written for the
+	// validator-ejector to consume: "<exitFilePrefix><validator-pubkey>.json".
+	exitFilePrefix = "validator-exit-"
 )
 
 // Run runs the lido-dv-exit core logic.
@@ -58,7 +63,7 @@ func Run(ctx context.Context, config Config) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	cl, keys, err := keystore.LoadManifest(config.CharonRuntimeDir)
+	cl, keys, err := keystore.LoadManifest(ctx, config.CharonRuntimeDir)
 	if err != nil {
 		return errors.Wrap(err, "keystore load error")
 	}
@@ -70,14 +75,14 @@ func Run(ctx context.Context, config Config) error {
 
 	// Logging labels.
 	labels := map[string]string{
-		"lde_cluster_hash": hex.EncodeToString(cl.GetInitialMutationHash()),
-		"lde_cluster_name": cl.GetName(),
+		"lde_cluster_hash": hex.EncodeToString(cl.LockHash),
+		"lde_cluster_name": cl.Name,
 		"lde_cluster_peer": p2p.PeerName(peerID),
 		"lde_version":      util.GitHash(),
 	}
 	log.SetLokiLabels(labels)
 
-	shareIdx, err := keystore.ShareIdxForCluster(config.CharonRuntimeDir, cl)
+	shareIdx, err := keystore.ShareIdxForCluster(config.CharonRuntimeDir, *cl)
 	if err != nil {
 		return errors.Wrap(err, "share idx for cluster")
 	}
@@ -96,21 +101,23 @@ func Run(ctx context.Context, config Config) error {
 		return errors.Wrap(err, "keystore load error")
 	}
 
-	existingValIndices, err := loadExistingValidatorExits(config.EjectorExitPath)
-	if err != nil {
-		return err
-	}
-
 	bnClient, err := eth2Client(
 		ctx,
 		config.BeaconNodeURL,
 		config.BeaconNodeHeaders,
 		uint64(len(valsKeys)),
 		config.ValidatorQueryChunkSize,
-		[4]byte(cl.GetForkVersion()),
+		[4]byte(cl.ForkVersion),
 	)
 	if err != nil {
 		return errors.Wrap(err, "can't connect to beacon node")
+	}
+
+	// Existing on-disk exits with a valid signature are skipped; ones with an invalid signature
+	// are not reported as existing, so they get re-fetched and overwritten further below.
+	existingValIndices, err := loadExistingValidatorExits(ctx, config.EjectorExitPath, bnClient, eth2p0.Epoch(config.ExitEpoch))
+	if err != nil {
+		return err
 	}
 
 	slotTicker, err := newSlotTicker(ctx, bnClient, clockwork.NewRealClock())
@@ -254,7 +261,7 @@ func Run(ctx context.Context, config Config) error {
 
 		if len(signedExitsInRound) != 0 {
 			// try posting the partial exits that have been produced at this stage
-			err := postPartialExit(ctx, oAPI, cl.GetInitialMutationHash(), shareIdx, identityKey, signedExitsInRound...)
+			err := postPartialExit(ctx, oAPI, cl.LockHash, shareIdx, identityKey, signedExitsInRound...)
 			if err != nil {
 				log.Error(ctx, "Cannot post exits to obol api, will retry later", err)
 			} else {
@@ -289,7 +296,7 @@ func Run(ctx context.Context, config Config) error {
 func writeAllFullExits(
 	ctx context.Context,
 	oAPI obolapi.Client,
-	cl *manifestpb.Cluster,
+	cl *cluster.Lock,
 	signedExits []obolapi.ExitBlob,
 	alreadySignedExits map[string]struct{},
 	ejectorExitPath string,
@@ -303,18 +310,25 @@ func writeAllFullExits(
 			continue // bypass already-fetched full exit
 		}
 
-		exitFSPath := filepath.Join(ejectorExitPath, fmt.Sprintf("validator-exit-%s.json", signedExit.PublicKey))
+		partialPubKeys, err := pubSharesForValidator(cl, signedExit.PublicKey)
+		if err != nil {
+			log.Error(ctx, "Cannot find public shares for validator", err, z.Str("validator", signedExit.PublicKey))
+			continue
+		}
+
+		exitFSPath := filepath.Join(ejectorExitPath, fmt.Sprintf("%s%s.json", exitFilePrefix, signedExit.PublicKey))
 
 		if !fetchFullExit(
 			ctx,
 			oAPI,
-			cl.GetInitialMutationHash(),
+			cl.LockHash,
 			signedExit.PublicKey,
 			exitFSPath,
 			shareIndex,
 			identityKey,
 			eth2Cl,
 			epoch,
+			partialPubKeys,
 		) {
 			log.Debug(ctx, "Could not fetch full exit for validator", z.Str("validator", signedExit.PublicKey))
 			continue
@@ -322,6 +336,18 @@ func writeAllFullExits(
 
 		alreadySignedExits[signedExit.PublicKey] = struct{}{}
 	}
+}
+
+// pubSharesForValidator returns the partial public shares for the validator identified by
+// validatorPubkey, as found in the cluster lock.
+func pubSharesForValidator(cl *cluster.Lock, validatorPubkey string) ([][]byte, error) {
+	for _, val := range cl.Validators {
+		if strings.EqualFold(val.PublicKeyHex(), validatorPubkey) {
+			return val.PubShares, nil
+		}
+	}
+
+	return nil, errors.New("validator public key not found in cluster lock", z.Str("validator", validatorPubkey))
 }
 
 // fetchFullExit returns true if a full exit was received from the Obol API, and was written in exitFSPath.
@@ -335,13 +361,14 @@ func fetchFullExit(
 	identityKey *k1.PrivateKey,
 	eth2Cl eth2wrap.Client,
 	epoch eth2p0.Epoch,
+	partialPubKeys [][]byte,
 ) bool {
 	ctx, cancel := context.WithTimeout(ctx, obolAPITimeout)
 	defer cancel()
 
-	fullExit, err := oAPI.GetFullExit(ctx, validatorPubkey, lockHash, shareIndex, identityKey)
+	fullExit, err := oAPI.GetFullExit(ctx, validatorPubkey, lockHash, shareIndex, identityKey, partialPubKeys, eth2Cl)
 	if err != nil {
-		if !errors.Is(err, obolapi.ErrNoExit) {
+		if !errors.Is(err, obolapi.ErrNoValue) {
 			log.Warn(ctx, "Cannot fetch full exit from obol api, will retry", err)
 		}
 
@@ -355,37 +382,7 @@ func fetchFullExit(
 		return false
 	}
 
-	// parse validator public key
-	rawPkBytes, err := util.ValidatorPubkeyToBytes(validatorPubkey)
-	if err != nil {
-		log.Error(ctx, "Cannot decode validator public key", err)
-
-		return false
-	}
-
-	pubkey, err := tblsconv.PubkeyFromBytes(rawPkBytes)
-	if err != nil {
-		log.Error(ctx, "Cannot convert public key to tbls type", err)
-
-		return false
-	}
-
-	// parse signature
-	signature, err := tblsconv.SignatureFromBytes(fullExit.SignedExitMessage.Signature[:])
-	if err != nil {
-		log.Error(ctx, "Cannot convert public key to tbls type", err)
-
-		return false
-	}
-
-	exitRoot, err := sigDataForExit(ctx, *fullExit.SignedExitMessage.Message, eth2Cl, epoch)
-	if err != nil {
-		log.Error(ctx, "Cannot calculate hash tree root for exit message for verification", err)
-
-		return false
-	}
-
-	err = tbls.Verify(pubkey, exitRoot[:], signature)
+	err = verifyFullExit(ctx, validatorPubkey, fullExit.SignedExitMessage, eth2Cl, epoch)
 	if err != nil {
 		log.Error(ctx, "Exit message signature not verified", err)
 
@@ -400,6 +397,37 @@ func fetchFullExit(
 	}
 
 	return true
+}
+
+// verifyFullExit verifies that signedExit is a voluntary exit message validly signed by the
+// validator's aggregate public key (validatorPubkey) at the given exit epoch.
+func verifyFullExit(ctx context.Context, validatorPubkey string, signedExit eth2p0.SignedVoluntaryExit, eth2Cl eth2wrap.Client, epoch eth2p0.Epoch) error {
+	rawPkBytes, err := util.ValidatorPubkeyToBytes(validatorPubkey)
+	if err != nil {
+		return errors.Wrap(err, "decode validator public key")
+	}
+
+	pubkey, err := tblsconv.PubkeyFromBytes(rawPkBytes)
+	if err != nil {
+		return errors.Wrap(err, "convert public key to tbls type")
+	}
+
+	signature, err := tblsconv.SignatureFromBytes(signedExit.Signature[:])
+	if err != nil {
+		return errors.Wrap(err, "convert signature to tbls type")
+	}
+
+	exitRoot, err := sigDataForExit(ctx, *signedExit.Message, eth2Cl, epoch)
+	if err != nil {
+		return errors.Wrap(err, "calculate hash tree root for exit message")
+	}
+
+	err = tbls.Verify(pubkey, exitRoot[:], signature)
+	if err != nil {
+		return errors.Wrap(err, "exit message signature verification")
+	}
+
+	return nil
 }
 
 // postPartialExit posts exitBlobs to Obol API with a default HTTP request timeout.
@@ -505,18 +533,16 @@ func timeoutByValAmount(valAmount uint64) time.Duration {
 	return time.Duration(rate*20) * time.Second
 }
 
-// loadExistingValidatorExits reads the indices for validators whose exits have been already processed.
-func loadExistingValidatorExits(ejectorPath string) (map[eth2p0.ValidatorIndex]struct{}, error) {
+// loadExistingValidatorExits reads the indices for validators whose exits have already been
+// processed. An exit is only considered already-processed if its on-disk signature verifies;
+// exits with an invalid signature are skipped (and logged), so they get re-fetched and overwritten.
+func loadExistingValidatorExits(ctx context.Context, ejectorPath string, eth2Cl eth2wrap.Client, epoch eth2p0.Epoch) (map[eth2p0.ValidatorIndex]struct{}, error) {
 	exitPaths, err := filepath.Glob(filepath.Join(ejectorPath, "*.json"))
 	if err != nil {
 		return nil, errors.Wrap(err, "ejector exits glob")
 	}
 
 	ret := map[eth2p0.ValidatorIndex]struct{}{}
-
-	if len(exitPaths) == 0 {
-		return ret, nil
-	}
 
 	for _, ep := range exitPaths {
 		exitBytes, err := os.ReadFile(ep)
@@ -531,10 +557,42 @@ func loadExistingValidatorExits(ejectorPath string) (map[eth2p0.ValidatorIndex]s
 			return nil, errors.Wrap(err, "unmarshal exit file", z.Str("path", ep))
 		}
 
+		validatorPubkey, err := validatorPubkeyFromExitPath(ep)
+		if err != nil {
+			return nil, errors.Wrap(err, "validator pubkey from exit file name", z.Str("path", ep))
+		}
+
+		err = verifyFullExit(ctx, validatorPubkey, exit, eth2Cl, epoch)
+		if err != nil {
+			log.Warn(ctx, "Incorrect exit signature, re-fetching", err,
+				z.Str("path", ep),
+				z.U64("validx", uint64(exit.Message.ValidatorIndex)),
+			)
+
+			continue
+		}
+
 		ret[exit.Message.ValidatorIndex] = struct{}{}
 	}
 
 	return ret, nil
+}
+
+// validatorPubkeyFromExitPath extracts the validator public key from an exit file path of the
+// form "<exitFilePrefix><pubkey>.json".
+func validatorPubkeyFromExitPath(exitPath string) (string, error) {
+	base := filepath.Base(exitPath)
+
+	if !strings.HasPrefix(base, exitFilePrefix) || !strings.HasSuffix(base, ".json") {
+		return "", errors.New("unexpected exit file name", z.Str("filename", base))
+	}
+
+	pubkey := strings.TrimSuffix(strings.TrimPrefix(base, exitFilePrefix), ".json")
+	if pubkey == "" {
+		return "", errors.New("empty validator pubkey in exit file name", z.Str("filename", base))
+	}
+
+	return pubkey, nil
 }
 
 // safeRand returns a random uint64 from 1 to max, using crypto/rand as a source.

@@ -130,6 +130,7 @@ const (
 )
 
 func (s StateID) String() string {
+	//nolint:revive,nolintlint // keep identical branches for clarity
 	switch s {
 	case StateIDHead:
 		return "head"

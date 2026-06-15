@@ -3,6 +3,7 @@
 package keystore
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,10 +13,9 @@ import (
 	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/obolnetwork/charon/app/errors"
+	"github.com/obolnetwork/charon/app/eth1wrap"
 	"github.com/obolnetwork/charon/app/k1util"
 	"github.com/obolnetwork/charon/cluster"
-	"github.com/obolnetwork/charon/cluster/manifest"
-	manifestpb "github.com/obolnetwork/charon/cluster/manifestpb/v1"
 	"github.com/obolnetwork/charon/eth2util/enr"
 	ckeystore "github.com/obolnetwork/charon/eth2util/keystore"
 	"github.com/obolnetwork/charon/tbls"
@@ -73,33 +73,31 @@ func (vs ValidatorShares) ValidatorsPhase0() ([]eth2p0.BLSPubKey, error) {
 	return ret, nil
 }
 
-// LoadClusterLock returns the *manifestpb.Cluster file contained in dir.
-func LoadClusterLock(dir string) (*manifestpb.Cluster, error) {
-	// try opening the lock file
+// LoadClusterLock returns the *cluster.Lock contained in dir.
+func LoadClusterLock(ctx context.Context, dir string) (*cluster.Lock, error) {
 	lockFile := filepath.Join(dir, "cluster-lock.json")
-	manifestFile := filepath.Join(dir, "cluster-manifest.pb")
 
-	cl, err := manifest.LoadCluster(manifestFile, lockFile, func(_ cluster.Lock) error {
-		return nil // don't verify signatures, we don't care
-	})
+	// lido-dv-exit never uses ERC-1271 (smart contract / SAFE) operator signatures, so an
+	// unconnected eth1 client is sufficient.
+	eth1Cl := eth1wrap.NewDefaultEthClientRunner("")
+
+	cl, err := cluster.LoadClusterLock(ctx, lockFile, true, eth1Cl)
 	if err != nil {
-		return nil, errors.Wrap(err, "manifest load error")
+		return nil, errors.Wrap(err, "cluster lock load error")
 	}
 
 	return cl, nil
 }
 
-// LoadManifest loads a cluster manifest from one of the charon directories contained in dir.
-// It checks that all the directories containing a validator_keys subdirectory contain the same manifest file, or lock file.
-// loadManifest gives precedence to the manifest file.
-// It returns the v1.Cluster contained in dir, and the set of private key shares contained in validator_keys.
-func LoadManifest(dir string) (*manifestpb.Cluster, []tbls.PrivateKey, error) {
+// LoadManifest loads a cluster lock from the charon directory dir.
+// It returns the cluster.Lock contained in dir, and the set of private key shares contained in validator_keys.
+func LoadManifest(ctx context.Context, dir string) (*cluster.Lock, []tbls.PrivateKey, error) {
 	_, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "can't read directory")
 	}
 
-	cl, err := LoadClusterLock(dir)
+	cl, err := LoadClusterLock(ctx, dir)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -139,40 +137,19 @@ func loadIdentityKey(dir string) (enr.Record, error) {
 	return e, nil
 }
 
-// ShareIdxForCluster returns the share index for the Charon cluster's ENR identity key, given a *manifestpb.Cluster.
-func ShareIdxForCluster(dir string, cl *manifestpb.Cluster) (uint64, error) {
-	pids, err := manifest.ClusterPeerIDs(cl)
+// ShareIdxForCluster returns the share index for the Charon cluster's ENR identity key, given a cluster.Lock.
+func ShareIdxForCluster(dir string, cl cluster.Lock) (uint64, error) {
+	identityKey, err := IdentityPrivateKey(dir)
 	if err != nil {
-		return 0, errors.Wrap(err, "cluster peer ids")
+		return 0, errors.Wrap(err, "identity key")
 	}
 
-	idKey, err := loadIdentityKey(dir)
+	shareIdx, err := ckeystore.ShareIdxForCluster(cl, *identityKey.PubKey())
 	if err != nil {
-		return 0, errors.Wrap(err, "enr")
+		return 0, errors.Wrap(err, "share index for cluster")
 	}
 
-	k := crypto.Secp256k1PublicKey(*idKey.PubKey)
-
-	shareIdx := -1
-
-	for _, pid := range pids {
-		if !pid.MatchesPublicKey(&k) {
-			continue
-		}
-
-		nIdx, err := manifest.ClusterNodeIdx(cl, pid)
-		if err != nil {
-			return 0, errors.Wrap(err, "cluster node idx")
-		}
-
-		shareIdx = nIdx.ShareIdx
-	}
-
-	if shareIdx == -1 {
-		return 0, errors.New("node index for loaded enr not found in cluster lock")
-	}
-
-	return uint64(shareIdx), nil
+	return shareIdx, nil
 }
 
 // IdentityPrivateKey returns the Charon identity private key.
@@ -208,7 +185,7 @@ func PeerIDFromIdentity(dir string) (peer.ID, error) {
 // KeyshareToValidatorPubkey maps each share in cl to the associated validator private key.
 // It returns an error if a keyshare does not appear in cl, or if there's a validator public key associated to no
 // keyshare.
-func KeyshareToValidatorPubkey(cl *manifestpb.Cluster, shares []tbls.PrivateKey) (ValidatorShares, error) {
+func KeyshareToValidatorPubkey(cl *cluster.Lock, shares []tbls.PrivateKey) (ValidatorShares, error) {
 	ret := make(map[ValidatorPubkey]KeyShare)
 
 	var pubShares []tbls.PublicKey
@@ -223,11 +200,11 @@ func KeyshareToValidatorPubkey(cl *manifestpb.Cluster, shares []tbls.PrivateKey)
 	}
 
 	// this is sadly a O(n^2) search
-	for _, validator := range cl.GetValidators() {
-		valHex := fmt.Sprintf("0x%x", validator.GetPublicKey())
+	for _, validator := range cl.Validators {
+		valHex := fmt.Sprintf("0x%x", validator.PubKey)
 
 		valPubShares := make(map[tbls.PublicKey]struct{})
-		for _, valShare := range validator.GetPubShares() {
+		for _, valShare := range validator.PubShares {
 			valPubShares[tbls.PublicKey(valShare)] = struct{}{}
 		}
 
@@ -252,7 +229,7 @@ func KeyshareToValidatorPubkey(cl *manifestpb.Cluster, shares []tbls.PrivateKey)
 		}
 	}
 
-	if len(ret) != len(cl.GetValidators()) {
+	if len(ret) != len(cl.Validators) {
 		return nil, errors.New("amount of key shares don't match amount of validator public keys")
 	}
 

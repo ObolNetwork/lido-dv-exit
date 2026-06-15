@@ -1,7 +1,8 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
-    "config:recommended"
+    "config:recommended",
+    "helpers:pinGitHubActionDigests"
   ],
   "semanticCommits": "enabled",
   "enabledManagers": [
@@ -16,7 +17,8 @@
         "github-actions"
       ],
       "matchFileNames": [
-        ".github/workflows/**"
+        ".github/workflows/**",
+        ".github/actions/**"
       ],
       "schedule": [
         "every weekend"
