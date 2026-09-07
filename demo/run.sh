@@ -53,7 +53,8 @@ echo "starting lido-dv-exit mockservers"
 pids+=($!)
 
 echo "starting anvil"
-anvil --fork-url https://mainnet.infura.io/v3/06b9a4142199435ebe083b50a3545d52 > /dev/null 2>&1 &
+# Set ETH_RPC_URL to a mainnet RPC endpoint (e.g. your own Infura/Alchemy URL).
+anvil --fork-url "${ETH_RPC_URL:?ETH_RPC_URL must be set to a mainnet RPC endpoint}" > /dev/null 2>&1 &
 pids+=($!)
 
 sleep 2
