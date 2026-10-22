@@ -23,7 +23,7 @@ FROM debian:trixie-slim
 # ca-certificates drops them, as charon's image does. Go itself rejects the
 # compromised eMudhra intermediates from 1.26.10. Remove the sed once the base
 # image ships the update.
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates wget \
+RUN apt-get update && apt-get install -y --no-install-recommends adduser ca-certificates wget \
   && rm -rf /var/lib/apt/lists/* \
   && sed -i -E 's#^(mozilla/(emSign_ECC_Root_CA_-_G3|Comodo_AAA_Services_root)\.crt)$#!\1#' /etc/ca-certificates.conf \
   && update-ca-certificates --fresh
