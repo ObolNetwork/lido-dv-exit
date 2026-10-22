@@ -4,7 +4,6 @@ package app_test
 import (
 	"bytes"
 	"context"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -21,7 +20,6 @@ import (
 	"testing"
 	"time"
 
-	eth2api "github.com/attestantio/go-eth2-client/api"
 	eth2v1 "github.com/attestantio/go-eth2-client/api/v1"
 	eth2http "github.com/attestantio/go-eth2-client/http"
 	eth2p0 "github.com/attestantio/go-eth2-client/spec/phase0"
@@ -32,6 +30,7 @@ import (
 	"github.com/obolnetwork/charon/app/log"
 	"github.com/obolnetwork/charon/cluster"
 	ckeystore "github.com/obolnetwork/charon/eth2util/keystore"
+	"github.com/obolnetwork/charon/eth2util/signing"
 	"github.com/obolnetwork/charon/tbls"
 	"github.com/obolnetwork/charon/testutil/beaconmock"
 	"github.com/obolnetwork/charon/testutil/obolapimock"
@@ -40,7 +39,6 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/ObolNetwork/lido-dv-exit/app"
-	"github.com/ObolNetwork/lido-dv-exit/app/bnapi"
 )
 
 type beaconMockWrap struct {
@@ -221,8 +219,6 @@ func newServers(t *testing.T, lock cluster.Lock, validators func() beaconmock.Va
 }
 
 func Test_NormalFlow(t *testing.T) {
-	// TODO (kalo): WithForkVersion function is still missing from v1.4.3. Once it's added in v1.5, remove this skip.
-	t.Skip()
 
 	valAmt := 100
 	operatorAmt := 4
@@ -247,8 +243,6 @@ func Test_NormalFlow(t *testing.T) {
 }
 
 func Test_NormalFlowHalfHalfSingleRun(t *testing.T) {
-	// TODO (kalo): WithForkVersion function is still missing from v1.4.3. Once it's added in v1.5, remove this skip.
-	t.Skip()
 
 	valAmt := 10
 	operatorAmt := 4
@@ -307,8 +301,6 @@ func Test_NormalFlowHalfHalfSingleRun(t *testing.T) {
 }
 
 func Test_WithNonActiveVals(t *testing.T) {
-	// TODO (kalo): WithForkVersion function is still missing from v1.4.3. Once it's added in v1.5, remove this skip.
-	t.Skip()
 
 	valAmt := 100
 	operatorAmt := 4
@@ -334,8 +326,6 @@ func Test_WithNonActiveVals(t *testing.T) {
 }
 
 func Test_RunTwice(t *testing.T) {
-	// TODO (kalo): WithForkVersion function is still missing from v1.4.3. Once it's added in v1.5, remove this skip.
-	t.Skip()
 
 	valAmt := 4
 	operatorAmt := 4
@@ -519,18 +509,9 @@ func run(
 	mockEth2Cl := eth2Client(t, context.Background(), servers.beacon.Address())
 	mockEth2Cl.SetForkVersion([4]byte(lock.ForkVersion))
 
-	rawSpec, err := mockEth2Cl.Spec(ctx, &eth2api.SpecOpts{})
+	// Exits are signed over the voluntary exit domain at the exit epoch, as lido-dv-exit signs them.
+	domain, err := signing.GetDomain(ctx, mockEth2Cl, signing.DomainExit, eth2p0.Epoch(194048))
 	require.NoError(t, err)
-
-	spec := rawSpec.Data
-
-	genesis, err := mockEth2Cl.Genesis(ctx, &eth2api.GenesisOpts{})
-	require.NoError(t, err)
-
-	forkHash, err := bnapi.CapellaFork("0x" + hex.EncodeToString(genesis.Data.GenesisForkVersion[:]))
-	require.NoError(t, err)
-
-	genesisValidatorRoot := genesis.Data.GenesisValidatorsRoot
 
 	// check that all produced exit messages are signed by all partial keys for all operators
 	for opIdx := range operatorAmt {
@@ -548,15 +529,6 @@ func run(
 			require.NoError(t, json.Unmarshal(fc, &exit))
 
 			sigRoot, err := exit.Message.HashTreeRoot()
-			require.NoError(t, err)
-
-			domainType, ok := spec["DOMAIN_VOLUNTARY_EXIT"]
-			require.True(t, ok)
-
-			domainTyped, ok := domainType.(eth2p0.DomainType)
-			require.True(t, ok)
-
-			domain, err := bnapi.ComputeDomain(forkHash, domainTyped, genesisValidatorRoot)
 			require.NoError(t, err)
 
 			sigData, err := (&eth2p0.SigningData{ObjectRoot: sigRoot, Domain: domain}).HashTreeRoot()
