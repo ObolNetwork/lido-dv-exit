@@ -219,7 +219,6 @@ func newServers(t *testing.T, lock cluster.Lock, validators func() beaconmock.Va
 }
 
 func Test_NormalFlow(t *testing.T) {
-
 	valAmt := 100
 	operatorAmt := 4
 	// fv, err := hex.DecodeString(strings.TrimPrefix(eth2util.Holesky.GenesisForkVersionHex, "0x"))
@@ -243,7 +242,6 @@ func Test_NormalFlow(t *testing.T) {
 }
 
 func Test_NormalFlowHalfHalfSingleRun(t *testing.T) {
-
 	valAmt := 10
 	operatorAmt := 4
 	// fv, err := hex.DecodeString(strings.TrimPrefix(eth2util.Holesky.GenesisForkVersionHex, "0x"))
@@ -301,7 +299,6 @@ func Test_NormalFlowHalfHalfSingleRun(t *testing.T) {
 }
 
 func Test_WithNonActiveVals(t *testing.T) {
-
 	valAmt := 100
 	operatorAmt := 4
 	// fv, err := hex.DecodeString(strings.TrimPrefix(eth2util.Holesky.GenesisForkVersionHex, "0x"))
@@ -326,7 +323,6 @@ func Test_WithNonActiveVals(t *testing.T) {
 }
 
 func Test_RunTwice(t *testing.T) {
-
 	valAmt := 4
 	operatorAmt := 4
 	// fv, err := hex.DecodeString(strings.TrimPrefix(eth2util.Holesky.GenesisForkVersionHex, "0x"))
