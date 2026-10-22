@@ -53,6 +53,9 @@ const (
 	maxBeaconNodeTimeout = 10 * time.Second
 	obolAPITimeout       = 10 * time.Second
 
+	// postPartialExitsKey is the retry schedule key of posting a round's partial exits.
+	postPartialExitsKey = "post_partial_exits"
+
 	// exitFilePrefix is the file name prefix of the per-validator exit files written for the
 	// validator-ejector to consume: "<exitFilePrefix><validator-pubkey>.json".
 	exitFilePrefix = "validator-exit-"
@@ -156,6 +159,12 @@ func Run(ctx context.Context, config Config) error {
 
 	fetchedSignedExits := map[string]struct{}{}
 
+	// Obol API requests back off exponentially while they keep failing, e.g. while the cluster
+	// hasn't posted the threshold of partial exits for a full exit yet (404), instead of being
+	// retried every slot.
+	fetchRetries := newRetrySchedule()
+	postRetries := newRetrySchedule()
+
 	for slot := range slotTicker {
 		if len(valsKeys) == 0 {
 			// if we don't have any more keys to process, make sure we fetched *all* full exits before
@@ -172,6 +181,8 @@ func Run(ctx context.Context, config Config) error {
 					identityKey,
 					bnClient,
 					eth2p0.Epoch(config.ExitEpoch),
+					slot.Slot,
+					fetchRetries,
 				)
 
 				continue
@@ -187,6 +198,27 @@ func Run(ctx context.Context, config Config) error {
 				z.U64("epoch", slot.Epoch()),
 				z.U64("modulo", slotModulo),
 				z.U64("slot", slot.Slot),
+			)
+
+			continue
+		}
+
+		if !postRetries.due(postPartialExitsKey, slot.Slot) {
+			log.Debug(ctx, "Backing off posting partial exits", z.U64("slot", slot.Slot))
+
+			writeAllFullExits(
+				ctx,
+				oAPI,
+				cl,
+				signedExits,
+				fetchedSignedExits,
+				config.EjectorExitPath,
+				shareIdx,
+				identityKey,
+				bnClient,
+				eth2p0.Epoch(config.ExitEpoch),
+				slot.Slot,
+				fetchRetries,
 			)
 
 			continue
@@ -263,14 +295,19 @@ func Run(ctx context.Context, config Config) error {
 			// try posting the partial exits that have been produced at this stage
 			err := postPartialExit(ctx, oAPI, cl.LockHash, shareIdx, identityKey, signedExitsInRound...)
 			if err != nil {
-				log.Error(ctx, "Cannot post exits to obol api, will retry later", err)
+				next := postRetries.failed(postPartialExitsKey, slot.Slot)
+				log.Error(ctx, "Cannot post exits to obol api, will retry later", err, z.U64("next_slot", next))
 			} else {
+				postRetries.succeeded(postPartialExitsKey)
+
 				for _, signedExit := range signedExitsInRound {
 					delete(valsKeys, keystore.ValidatorPubkey(signedExit.PublicKey))
 				}
-			}
 
-			signedExits = append(signedExits, signedExitsInRound...)
+				// Only fetch full exits of posted partial exits; failed rounds are signed and posted
+				// again, so appending them would duplicate the validators.
+				signedExits = append(signedExits, signedExitsInRound...)
+			}
 		}
 
 		writeAllFullExits(
@@ -284,6 +321,8 @@ func Run(ctx context.Context, config Config) error {
 			identityKey,
 			bnClient,
 			eth2p0.Epoch(config.ExitEpoch),
+			slot.Slot,
+			fetchRetries,
 		)
 	}
 
@@ -292,7 +331,8 @@ func Run(ctx context.Context, config Config) error {
 	return nil
 }
 
-// writeAllFullExits fetches and writes signedExits to disk.
+// writeAllFullExits fetches and writes signedExits to disk, attempting each validator only once
+// its retry schedule is due at the slot.
 func writeAllFullExits(
 	ctx context.Context,
 	oAPI obolapi.Client,
@@ -304,10 +344,16 @@ func writeAllFullExits(
 	identityKey *k1.PrivateKey,
 	eth2Cl eth2wrap.Client,
 	epoch eth2p0.Epoch,
+	slot uint64,
+	retries *retrySchedule,
 ) {
 	for _, signedExit := range signedExits {
 		if _, ok := alreadySignedExits[signedExit.PublicKey]; ok {
 			continue // bypass already-fetched full exit
+		}
+
+		if !retries.due(signedExit.PublicKey, slot) {
+			continue // backing off
 		}
 
 		partialPubKeys, err := pubSharesForValidator(cl, signedExit.PublicKey)
@@ -330,10 +376,14 @@ func writeAllFullExits(
 			epoch,
 			partialPubKeys,
 		) {
-			log.Debug(ctx, "Could not fetch full exit for validator", z.Str("validator", signedExit.PublicKey))
+			next := retries.failed(signedExit.PublicKey, slot)
+			log.Debug(ctx, "Could not fetch full exit for validator, backing off",
+				z.Str("validator", signedExit.PublicKey), z.U64("next_slot", next))
+
 			continue
 		}
 
+		retries.succeeded(signedExit.PublicKey)
 		alreadySignedExits[signedExit.PublicKey] = struct{}{}
 	}
 }
