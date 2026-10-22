@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/ObolNetwork/lido-dv-exit/app/util"
+	"github.com/ObolNetwork/lido-dv-exit/app/version"
 )
 
 // newVersionCmd adds the "version" command to root.
@@ -24,11 +25,11 @@ func newVersionCmd(root *cobra.Command) {
 			info := util.VCSInfoMap(raw)
 
 			if !fullVersion {
-				fmt.Println(info["vcs.revision"]) //nolint:forbidigo // printing version
+				fmt.Println(version.String()) //nolint:forbidigo // printing version
 				return nil
 			}
 
-			fmt.Println("lido-dv-exit") //nolint:forbidigo // printing version
+			fmt.Println("lido-dv-exit", version.Version()) //nolint:forbidigo // printing version
 
 			for k, v := range info {
 				fmt.Printf("%s: %s\n", k, v) //nolint:forbidigo // printing version

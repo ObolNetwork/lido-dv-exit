@@ -3,4 +3,37 @@ updates:
 - package-ecosystem: "gomod"
   directory: "/"
   schedule:
-    interval: "daily"
+    interval: "weekly"
+  allow:
+  # Update indirect dependencies too: the direct-only default left most of the
+  # module graph behind (209 of 419 modules were outdated in October 2026).
+  - dependency-type: "all"
+  ignore:
+  # go-eth2-client is replaced by Obol's fork, kept in step with charon's replace
+  # directive by hand; bumping the attestantio requirement has no effect.
+  - dependency-name: "github.com/attestantio/go-eth2-client"
+  # As in charon, herumi bls minor and major versions only move with charon.
+  - dependency-name: "github.com/herumi/bls-eth-go-binary"
+    update-types: ["version-update:semver-major","version-update:semver-minor"]
+  groups:
+    go-dependencies:
+      patterns:
+        - "*"
+- package-ecosystem: "docker"
+  directory: "/"
+  schedule:
+    interval: "weekly"
+  groups:
+    docker-dependencies:
+      patterns:
+        - "*"
+- package-ecosystem: "github-actions"
+  directories:
+    - "/"
+    - "/.github/actions/setup-go"
+  schedule:
+    interval: "weekly"
+  groups:
+    github-actions:
+      patterns:
+        - "*"
