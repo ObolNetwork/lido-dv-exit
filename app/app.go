@@ -35,6 +35,7 @@ import (
 	"github.com/ObolNetwork/lido-dv-exit/app/bnapi"
 	"github.com/ObolNetwork/lido-dv-exit/app/keystore"
 	"github.com/ObolNetwork/lido-dv-exit/app/util"
+	"github.com/ObolNetwork/lido-dv-exit/app/version"
 )
 
 // Config is the lido-dv-exit CLI configuration flag value holder.
@@ -97,7 +98,9 @@ func Run(ctx context.Context, config Config) error {
 
 	ctx = log.WithCtx(ctx, z.U64("share_idx", shareIdx), z.Str("peer_name", p2p.PeerName(peerID)))
 
-	log.Info(ctx, "Lido-dv-exit starting")
+	hash, timestamp := version.GitCommit()
+	log.Info(ctx, "Lido-dv-exit starting",
+		z.Str("version", version.Version()), z.Str("git_commit_hash", hash), z.Str("git_commit_time", timestamp))
 
 	valsKeys, err := keystore.KeyshareToValidatorPubkey(cl, keys)
 	if err != nil {

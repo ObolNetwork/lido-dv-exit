@@ -39,7 +39,7 @@ jobs:
 
     - name: Maybe overwrite app/version.Version with git tag
       if: github.ref_type == 'tag'
-      run: echo 'GO_BUILD_FLAG=-ldflags=-X github.com/obolnetwork/lido-dv-exit/version.version=${{ github.ref_name }}' >> $GITHUB_ENV
+      run: echo 'GO_BUILD_FLAG=-ldflags=-X github.com/ObolNetwork/lido-dv-exit/app/version.version=${{ github.ref_name }}' >> $GITHUB_ENV
 
     - name: Build and push by digest
       id: build
@@ -47,8 +47,10 @@ jobs:
       with:
         context: .
         platforms: ${{ matrix.platform }}
-        # No provenance attestations, which show up as unknown/unknown platforms.
-        provenance: false
+        # Attach max-mode SLSA provenance and an SBOM to each platform image; registries list
+        # these attestations as unknown/unknown platform entries of the manifest list.
+        provenance: mode=max
+        sbom: true
         build-args: |
           GITHUB_SHA=${{ github.sha }}
           GO_BUILD_FLAG=${{ env.GO_BUILD_FLAG }}
@@ -86,7 +88,7 @@ jobs:
 
     - name: Get version.Version from the code
       if: github.ref_type == 'branch'
-      run: echo "APP_VERSION=$(grep 'var version' version/version.go | cut -d'"' -f2)" >> $GITHUB_ENV
+      run: echo "APP_VERSION=$(grep 'var version' app/version/version.go | cut -d'"' -f2)" >> $GITHUB_ENV
 
     - name: Define docker image meta data tags
       id: meta
