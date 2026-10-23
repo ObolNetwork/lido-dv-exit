@@ -10,14 +10,14 @@ jobs:
     env:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
-    - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
       with:
         fetch-depth: 0 # Disable shallow checkout
     - uses: ./.github/actions/setup-go
     - run: go run . --help > cli-reference.txt
     # Draft the release with GitHub's generated notes (merged PRs since the previous tag),
     # to edit before publishing. charon's testutil/genchangelog doesn't exist in this repo.
-    - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
+    - uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
       with:
         draft: true
         files: cli-reference.txt
