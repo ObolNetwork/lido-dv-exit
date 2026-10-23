@@ -1,4 +1,5 @@
 name: Setup go
+description: Set up the Go toolchain and module cache.
 
 runs:
   using: "composite"

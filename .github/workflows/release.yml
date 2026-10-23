@@ -15,10 +15,12 @@ jobs:
         fetch-depth: 0 # Disable shallow checkout
     - uses: ./.github/actions/setup-go
     - run: go run . --help > cli-reference.txt
-    - run: go run testutil/genchangelog/main.go
+    # Draft the release with GitHub's generated notes (merged PRs since the previous tag),
+    # to edit before publishing. charon's testutil/genchangelog doesn't exist in this repo.
     - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
       with:
         draft: true
         files: cli-reference.txt
-        body_path: changelog.md
+        generate_release_notes: true
+        prerelease: ${{ contains(github.ref_name, '-') }}
         token: ${{ secrets.RELEASE_SECRET }}
