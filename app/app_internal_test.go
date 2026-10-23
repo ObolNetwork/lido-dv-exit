@@ -4,6 +4,7 @@ package app
 
 import (
 	"context"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -13,7 +14,10 @@ import (
 	eth2api "github.com/attestantio/go-eth2-client/api"
 	eth2v1 "github.com/attestantio/go-eth2-client/api/v1"
 	eth2p0 "github.com/attestantio/go-eth2-client/spec/phase0"
+	k1 "github.com/decred/dcrd/dcrec/secp256k1/v4"
 	"github.com/jonboulle/clockwork"
+	"github.com/obolnetwork/charon/app/errors"
+	"github.com/obolnetwork/charon/app/obolapi"
 	"github.com/obolnetwork/charon/testutil"
 	"github.com/obolnetwork/charon/testutil/beaconmock"
 	"github.com/stretchr/testify/require"
@@ -91,4 +95,32 @@ func TestWriteExitFile(t *testing.T) {
 	data, err := os.ReadFile(path)
 	require.NoError(t, err)
 	require.Equal(t, []byte("new"), data)
+}
+
+func TestIsLockNotFound(t *testing.T) {
+	status := http.StatusNotFound
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(status)
+		_, _ = w.Write([]byte(`{"statusCode":404,"message":"cluster lock is not found"}`))
+	}))
+	defer srv.Close()
+
+	oAPI, err := obolapi.New(srv.URL)
+	require.NoError(t, err)
+
+	key, err := k1.GeneratePrivateKey()
+	require.NoError(t, err)
+
+	err = postPartialExit(t.Context(), oAPI, make([]byte, 32), 1, key)
+	require.Error(t, err)
+	require.True(t, isLockNotFound(err))
+
+	status = http.StatusInternalServerError
+
+	err = postPartialExit(t.Context(), oAPI, make([]byte, 32), 1, key)
+	require.Error(t, err)
+	require.False(t, isLockNotFound(err))
+
+	require.False(t, isLockNotFound(errors.New("other")))
 }
