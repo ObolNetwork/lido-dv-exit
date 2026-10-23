@@ -27,7 +27,7 @@ func Run(ctx context.Context) error {
 	var conf app.Config
 
 	root := &cobra.Command{
-		Use:   "lido-exit-dv",
+		Use:   "lido-dv-exit",
 		Short: "Validator exit tool for Lido",
 		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
 			return initializeConfig(cmd)
@@ -68,13 +68,13 @@ func flagsToLogFields(flags *pflag.FlagSet) []z.Field {
 }
 
 // redact returns a redacted version of the given flag value. It currently supports redacting
-// passwords in valid URLs provided in ".*address.*" flags and redacting auth tokens.
+// passwords in valid URLs provided in ".*address.*" and ".*url.*" flags and redacting auth tokens.
 func redact(flag, val string) string {
 	if strings.Contains(flag, "auth-token") {
 		return "xxxxx"
 	}
 
-	if !strings.Contains(flag, "address") {
+	if !strings.Contains(flag, "address") && !strings.Contains(flag, "url") {
 		return val
 	}
 

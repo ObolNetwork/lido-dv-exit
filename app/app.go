@@ -10,6 +10,8 @@ import (
 	"fmt"
 	"math"
 	"math/big"
+	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -138,12 +140,12 @@ func Run(ctx context.Context, config Config) error {
 
 	rawSlotsPerEpoch, ok := specResp.Data["SLOTS_PER_EPOCH"]
 	if !ok {
-		return errors.Wrap(err, "spec field SLOTS_PER_EPOCH not found in spec")
+		return errors.New("spec field SLOTS_PER_EPOCH not found in spec")
 	}
 
 	slotPerEpoch, ok := rawSlotsPerEpoch.(uint64)
 	if !ok {
-		return errors.Wrap(err, "spec field SLOTS_PER_EPOCH is not uint64")
+		return errors.New("spec field SLOTS_PER_EPOCH is not uint64")
 	}
 
 	// define slot modulo
@@ -167,6 +169,10 @@ func Run(ctx context.Context, config Config) error {
 	// retried every slot.
 	fetchRetries := newRetrySchedule()
 	postRetries := newRetrySchedule()
+
+	// lockNotFoundLogged is true while posting partial exits keeps failing because the cluster
+	// lock isn't published to the Obol API, so the operator is told once rather than every attempt.
+	lockNotFoundLogged := false
 
 	for slot := range slotTicker {
 		if len(valsKeys) == 0 {
@@ -297,11 +303,29 @@ func Run(ctx context.Context, config Config) error {
 		if len(signedExitsInRound) != 0 {
 			// try posting the partial exits that have been produced at this stage
 			err := postPartialExit(ctx, oAPI, cl.LockHash, shareIdx, identityKey, signedExitsInRound...)
-			if err != nil {
+			switch {
+			case err != nil && isLockNotFound(err):
+				// Retrying soon can't help: the lock has to be published first.
+				next := postRetries.failedMax(postPartialExitsKey, slot.Slot)
+				if !lockNotFoundLogged {
+					log.Error(ctx, "Cluster lock not published to Obol API, partial exits cannot be stored until it is. "+
+						"Publish it by POSTing cluster-lock.json to <obol_api_url>/lock", err,
+						z.Str("lock_hash", "0x"+hex.EncodeToString(cl.LockHash)),
+						z.Str("obol_api_url", redactURL(config.ObolAPIURL)),
+						z.U64("next_slot", next),
+					)
+
+					lockNotFoundLogged = true
+				} else {
+					log.Debug(ctx, "Cluster lock still not published to the Obol API, backing off", z.U64("next_slot", next))
+				}
+			case err != nil:
 				next := postRetries.failed(postPartialExitsKey, slot.Slot)
 				log.Error(ctx, "Cannot post exits to obol api, will retry later", err, z.U64("next_slot", next))
-			} else {
+			default:
 				postRetries.succeeded(postPartialExitsKey)
+
+				lockNotFoundLogged = false
 
 				for _, signedExit := range signedExitsInRound {
 					delete(valsKeys, keystore.ValidatorPubkey(signedExit.PublicKey))
@@ -442,8 +466,8 @@ func fetchFullExit(
 		return false
 	}
 
-	//nolint:gosec // must be wide open
-	err = os.WriteFile(exitFSPath, data, 0o755)
+	//nolint:gosec // must be readable by the validator-ejector, which runs as another user
+	err = os.WriteFile(exitFSPath, data, 0o644)
 	if err != nil {
 		log.Warn(ctx, "Cannot write exit to filesystem path", err, z.Str("destination_path", exitFSPath))
 		return false
@@ -494,6 +518,25 @@ func postPartialExit(ctx context.Context, oAPI obolapi.Client, mutationHash []by
 	}
 
 	return nil
+}
+
+// isLockNotFound returns true if err is the Obol API rejecting a POST with 404 Not Found, which
+// for partial exits means the cluster lock isn't published to that Obol API.
+//
+// charon v1.11.2's obolapi client only reports the HTTP status as an error field.
+// TODO: switch to errors.Is(err, obolapi.ErrLockNotFound) once charon is bumped to a release that has it.
+func isLockNotFound(err error) bool {
+	return z.ContainsField(err, z.Int("status", http.StatusNotFound))
+}
+
+// redactURL returns rawURL with any password replaced, or a placeholder if it can't be parsed.
+func redactURL(rawURL string) string {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return "<invalid URL>"
+	}
+
+	return u.Redacted()
 }
 
 // shouldProcessValidator returns true if a validator needs to be processed, meaning a full exit message must
