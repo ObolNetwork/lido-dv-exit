@@ -46,6 +46,17 @@ func (r *retrySchedule) failed(key string, slot uint64) uint64 {
 	return r.next[key]
 }
 
+// failedMax records a failed attempt of the key at the slot that isn't worth retrying soon,
+// scheduling the next attempt after the maximum delay, and returns the slot it is scheduled at.
+func (r *retrySchedule) failedMax(key string, slot uint64) uint64 {
+	r.delay[key] = maxRetrySlots
+
+	//nolint:gosec // jitter only, doesn't need a cryptographic source
+	r.next[key] = slot + maxRetrySlots + rand.Uint64N(maxRetrySlots/2+1)
+
+	return r.next[key]
+}
+
 // succeeded resets the schedule of the key.
 func (r *retrySchedule) succeeded(key string) {
 	delete(r.next, key)
