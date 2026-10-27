@@ -442,8 +442,7 @@ func fetchFullExit(
 		return false
 	}
 
-	//nolint:gosec // must be wide open
-	err = os.WriteFile(exitFSPath, data, 0o755)
+	err = writeExitFile(exitFSPath, data)
 	if err != nil {
 		log.Warn(ctx, "Cannot write exit to filesystem path", err, z.Str("destination_path", exitFSPath))
 		return false
@@ -586,6 +585,25 @@ func timeoutByValAmount(valAmount uint64) time.Duration {
 	return time.Duration(rate*20) * time.Second
 }
 
+// exitFileMode lets the validator ejector, which may run as another user, read full exits.
+// Only the owner can change them, since a full exit can be broadcast as is.
+const exitFileMode = 0o644
+
+// writeExitFile writes a full exit with exitFileMode, also when overwriting an existing file.
+func writeExitFile(path string, data []byte) error {
+	err := os.WriteFile(path, data, exitFileMode)
+	if err != nil {
+		return errors.Wrap(err, "write exit file")
+	}
+
+	err = os.Chmod(path, exitFileMode)
+	if err != nil {
+		return errors.Wrap(err, "chmod exit file")
+	}
+
+	return nil
+}
+
 // loadExistingValidatorExits reads the indices for validators whose exits have already been
 // processed. An exit is only considered already-processed if its on-disk signature verifies;
 // exits with an invalid signature are skipped (and logged), so they get re-fetched and overwritten.
@@ -623,6 +641,12 @@ func loadExistingValidatorExits(ctx context.Context, ejectorPath string, eth2Cl 
 			)
 
 			continue
+		}
+
+		// Exits written by earlier versions were world-writable and executable.
+		err = os.Chmod(ep, exitFileMode)
+		if err != nil {
+			log.Warn(ctx, "Cannot restrict exit file permissions", err, z.Str("path", ep))
 		}
 
 		ret[exit.Message.ValidatorIndex] = struct{}{}

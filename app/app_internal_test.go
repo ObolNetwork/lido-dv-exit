@@ -5,6 +5,8 @@ package app
 import (
 	"context"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -73,4 +75,20 @@ func Test_newSlotTicker(t *testing.T) {
 	<-tick
 	clock.Advance(1 * time.Second)
 	<-tick
+}
+
+func TestWriteExitFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "exit.json")
+
+	// Overwriting an exit written by an earlier version also restricts its permissions.
+	require.NoError(t, os.WriteFile(path, []byte("old"), 0o755))
+	require.NoError(t, writeExitFile(path, []byte("new")))
+
+	info, err := os.Stat(path)
+	require.NoError(t, err)
+	require.Equal(t, os.FileMode(exitFileMode), info.Mode().Perm())
+
+	data, err := os.ReadFile(path)
+	require.NoError(t, err)
+	require.Equal(t, []byte("new"), data)
 }

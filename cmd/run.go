@@ -57,12 +57,8 @@ func newRunCmd(root *cobra.Command, conf app.Config, entrypoint func(ctx context
 			return errors.Wrap(err, "can't access ejector exit path")
 		}
 
-		err = dirWritable(conf.EjectorExitPath)
-		if err != nil {
-			return errors.Wrap(err, "can't access ejector exit path")
-		}
-
-		err = dirWritable(conf.CharonRuntimeDir)
+		// The charon directory is only read, so it can be mounted read-only.
+		_, err = os.ReadDir(conf.CharonRuntimeDir)
 		if err != nil {
 			return errors.Wrap(err, "can't access charon runtime directory")
 		}
@@ -76,8 +72,7 @@ func newRunCmd(root *cobra.Command, conf app.Config, entrypoint func(ctx context
 func dirWritable(dir string) error {
 	testFile := filepath.Join(dir, ".test-file")
 
-	//nolint:gosec // test file, will be deleted immediately
-	err := os.WriteFile(testFile, []byte("testfile"), 0o755)
+	err := os.WriteFile(testFile, []byte("testfile"), 0o600)
 	if err != nil {
 		return errors.Wrap(err, "directory access")
 	}
