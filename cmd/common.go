@@ -20,6 +20,7 @@ import (
 
 const (
 	lidoDVExit = "lidodvexit"
+	redacted   = "xxxxx"
 )
 
 // Run runs lido-dv-exit.
@@ -67,23 +68,46 @@ func flagsToLogFields(flags *pflag.FlagSet) []z.Field {
 	return fields
 }
 
-// redact returns a redacted version of the given flag value. It currently supports redacting
-// passwords in valid URLs provided in ".*address.*" flags and redacting auth tokens.
+// redact returns a redacted version of the given flag value. It redacts auth tokens, and the
+// password and query values of any URL, such as a beacon node URL with basic auth credentials.
+// The path of beacon node URLs is redacted too, since hosted providers put API keys in it.
 func redact(flag, val string) string {
 	if strings.Contains(flag, "auth-token") {
-		return "xxxxx"
-	}
-
-	if !strings.Contains(flag, "address") {
-		return val
+		return redacted
 	}
 
 	u, err := url.Parse(val)
-	if err != nil {
+	if err != nil || u.Scheme == "" || u.Host == "" {
 		return val
 	}
 
-	return u.Redacted()
+	changed := false
+
+	if _, ok := u.User.Password(); ok {
+		u.User = url.UserPassword(u.User.Username(), redacted)
+		changed = true
+	}
+
+	if u.RawQuery != "" {
+		q := u.Query()
+		for k := range q {
+			q[k] = []string{redacted}
+		}
+
+		u.RawQuery = q.Encode()
+		changed = true
+	}
+
+	if strings.Contains(flag, "beacon-node") && strings.Trim(u.Path, "/") != "" {
+		u.Path, u.RawPath = "/"+redacted, ""
+		changed = true
+	}
+
+	if !changed {
+		return val
+	}
+
+	return u.String()
 }
 
 func bindLogFlags(flags *pflag.FlagSet, config *log.Config) {
