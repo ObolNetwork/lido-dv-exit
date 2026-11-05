@@ -28,7 +28,7 @@ func Run(ctx context.Context) error {
 	var conf app.Config
 
 	root := &cobra.Command{
-		Use:   "lido-exit-dv",
+		Use:   "lido-dv-exit",
 		Short: "Validator exit tool for Lido",
 		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
 			return initializeConfig(cmd)

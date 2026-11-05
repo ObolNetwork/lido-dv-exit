@@ -16,7 +16,7 @@ It contains a few subcommands:
 Validator exit tool for Lido
 
 Usage:
-  lido-exit-dv [command]
+  lido-dv-exit [command]
 
 Available Commands:
   completion  Generate the autocompletion script for the specified shell
@@ -26,9 +26,9 @@ Available Commands:
   version     Returns lido-dv-exit version information
 
 Flags:
-  -h, --help   help for lido-exit-dv
+  -h, --help   help for lido-dv-exit
 
-Use "lido-exit-dv [command] --help" for more information about a command.
+Use "lido-dv-exit [command] --help" for more information about a command.
 ```
 
 For each subcommand, there are several flags --- for example, `lido-dv-exit run -h` shows:
@@ -37,7 +37,7 @@ For each subcommand, there are several flags --- for example, `lido-dv-exit run 
 Runs lido-dv-exit
 
 Usage:
-  lido-exit-dv run [flags]
+  lido-dv-exit run [flags]
 
 Flags:
   -b, --beacon-node-url string      URL pointing to a running ethereum beacon node.
@@ -69,6 +69,10 @@ To `run`, one must provide:
  - a directory containing Charon's lock file, identity private key and validator shares (`--charon-runtime-dir`)
 
 Optionally one can specify an exit epoch, and an instance of the Obol API to be used for coordination purposes.
+
+The cluster lock must be published to that Obol API (the Launchpad and `charon dkg --publish` do this), otherwise
+it can't store the partial exits. `lido-dv-exit` then logs `Cluster lock not published to Obol API` once at error level
+and only retries about every 256 slots; publish `cluster-lock.json` by POSTing it to `<obol-api-url>/lock`.
 
 One can also run the program with Docker, provided that the volume pointed to by `--ejector-exit-path` is writable.
 

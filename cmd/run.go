@@ -28,6 +28,8 @@ func newRunCmd(root *cobra.Command, conf app.Config, entrypoint func(ctx context
 
 			log.Info(cmd.Context(), "Parsed config", flagsToLogFields(cmd.Flags())...)
 
+			app.SetDefaultUserAgent()
+
 			return entrypoint(cmd.Context(), conf)
 		},
 	}
@@ -45,7 +47,7 @@ func newRunCmd(root *cobra.Command, conf app.Config, entrypoint func(ctx context
 	wrapPreRunE(cmd, func(_ *cobra.Command, _ []string) error {
 		_, err := url.ParseRequestURI(conf.BeaconNodeURL)
 		if err != nil {
-			return errors.New("beacon-node-url does not contain a vaild URL")
+			return errors.New("beacon-node-url does not contain a valid URL")
 		}
 
 		if conf.ValidatorQueryChunkSize <= 0 {
